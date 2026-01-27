@@ -21,6 +21,14 @@ option(BUILD_WITH_MARCH_NATIVE "Build with -march=native" OFF)
 option(ENABLE_CPPCHECK "Enable cppcheck" OFF)
 option(ENABLE_COVERAGE "Enable coverage check" OFF)
 
+# Added by Scout to silence warnings
+add_compile_options(
+  -Wno-unused-parameter
+  -Wno-sign-compare
+  -Wno-ignored-qualifiers
+  -Wno-reorder
+)
+
 if(BUILD_WITH_MARCH_NATIVE)
   set(GTSAM_POINTS_WITH_MARCH_NATIVE 1)
   add_compile_options(-march=native)
