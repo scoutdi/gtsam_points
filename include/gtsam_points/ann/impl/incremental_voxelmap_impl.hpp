@@ -216,10 +216,10 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data() const {
   visit_points([&](const auto& voxel, const int i) {
     // Dont return invalid points
     size_t counter = frame::counter(voxel, i);
-    frame->counters_storage.emplace_back(counter);
     if(counter == 0)
       return;
-
+    
+    frame->counters_storage.emplace_back(counter);
     frame->points_storage.emplace_back(frame::point(voxel, i));
     if (frame::has_normals(voxel)) {
       frame->normals_storage.emplace_back(frame::normal(voxel, i));
