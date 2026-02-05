@@ -68,6 +68,13 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points) {
 }
 
 template <typename VoxelContents>
+void IncrementalVoxelMap<VoxelContents>::decay(){
+  for (auto& voxel : flat_voxels) {
+    voxel->second.decay(voxel_setting);
+  }
+}
+
+template <typename VoxelContents>
 size_t IncrementalVoxelMap<VoxelContents>::knn_search(const double* pt, size_t k, size_t* k_indices, double* k_sq_dists, double max_sq_dist) const {
   const Eigen::Vector4d query = (Eigen::Vector4d() << pt[0], pt[1], pt[2], 1.0).finished();
   const Eigen::Vector3i center = fast_floor(query * inv_leaf_size).template head<3>();
@@ -206,6 +213,11 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data() const {
   }
 
   visit_points([&](const auto& voxel, const int i) {
+    // Dont return invalid points
+    size_t counter = frame::counter(voxel, i);
+    if(counter == 0)
+      return;
+
     frame->points_storage.emplace_back(frame::point(voxel, i));
     if (frame::has_normals(voxel)) {
       frame->normals_storage.emplace_back(frame::normal(voxel, i));

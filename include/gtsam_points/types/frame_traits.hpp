@@ -137,6 +137,11 @@ decltype(auto) point(const T& t, size_t i) {
   return traits<T>::point(t, i);
 }
 
+template <typename T>
+decltype(auto) counter(const T& t, size_t i) {
+  return traits<T>::counter(t, i);
+}
+
 // Normal
 template <typename T, typename = void>
 struct normal_defined : std::false_type {};

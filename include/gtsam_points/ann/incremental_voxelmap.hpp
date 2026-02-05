@@ -102,6 +102,8 @@ public:
 
   virtual PointCloudCPU::Ptr voxel_data() const;
 
+  virtual void decay();
+
 protected:
   std::vector<Eigen::Vector3i> neighbor_offsets(const int neighbor_voxel_mode) const;
 
