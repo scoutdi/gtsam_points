@@ -6,6 +6,7 @@
 
 #include <gtsam_points/ann/knn_result.hpp>
 #include <gtsam_points/util/fast_floor.hpp>
+#include <gtsam_points/types/frame_traits.hpp>
 
 namespace gtsam_points {
 
