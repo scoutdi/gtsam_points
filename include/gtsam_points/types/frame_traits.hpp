@@ -138,8 +138,8 @@ decltype(auto) point(const T& t, size_t i) {
 }
 
 template <typename T>
-decltype(auto) counter(const T& t, size_t i) {
-  return traits<T>::counter(t, i);
+decltype(auto) hit_counter(const T& t, size_t i) {
+  return traits<T>::hit_counter(t, i);
 }
 
 // Normal

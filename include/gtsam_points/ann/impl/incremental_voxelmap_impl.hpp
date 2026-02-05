@@ -12,7 +12,8 @@ namespace gtsam_points {
 
 template <typename VoxelContents>
 IncrementalVoxelMap<VoxelContents>::IncrementalVoxelMap(double leaf_size)
-: inv_leaf_size(1.0 / leaf_size),
+: leaf_size_(leaf_size),
+  inv_leaf_size(1.0 / leaf_size),
   lru_horizon(10),
   lru_clear_cycle(10),
   lru_counter(0),
@@ -72,6 +73,23 @@ template <typename VoxelContents>
 void IncrementalVoxelMap<VoxelContents>::decay(){
   for (auto& voxel : flat_voxels) {
     voxel->second.decay(voxel_setting);
+  }
+}
+
+template <typename VoxelContents>
+void IncrementalVoxelMap<VoxelContents>::line_decay(Eigen::Vector4d start, Eigen::Vector4d dir, double length) {
+  double progress = 0.0;
+  while(progress < length){
+    Eigen::Vector4d current_point = start + dir * progress;
+    const Eigen::Vector3i coord = fast_floor(current_point * inv_leaf_size).template head<3>();
+
+    auto found = voxels.find(coord);
+    if (found != voxels.end()) {
+      auto& [info, voxel] = *flat_voxels[found->second];
+      voxel.line_decay(voxel_setting, start, dir, length);
+    }
+
+    progress += leaf_size_; // Step size for line decay
   }
 }
 
@@ -215,7 +233,7 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data() const {
 
   visit_points([&](const auto& voxel, const int i) {
     // Dont return invalid points
-    size_t counter = frame::counter(voxel, i);
+    size_t counter = frame::hit_counter(voxel, i);
     if(counter == 0)
       return;
     

@@ -54,7 +54,7 @@ public:
   typename VoxelContents::Setting& voxel_insertion_setting() { return voxel_setting; }
 
   /// @brief Voxel size.
-  double leaf_size() const { return 1.0 / inv_leaf_size; }
+  double leaf_size() const { return leaf_size_; }
 
   /// @brief Number of voxels in the voxelmap.
   size_t num_voxels() const { return flat_voxels.size(); }
@@ -103,6 +103,7 @@ public:
   virtual PointCloudCPU::Ptr voxel_data() const;
 
   virtual void decay();
+  virtual void line_decay(Eigen::Vector4d start, Eigen::Vector4d dir, double length);
 
 protected:
   std::vector<Eigen::Vector3i> neighbor_offsets(const int neighbor_voxel_mode) const;
@@ -120,6 +121,7 @@ protected:
   static_assert(sizeof(size_t) == 8, "size_t must be 64-bit");
   static constexpr int point_id_bits = 32;                  ///< Use the first 32 bits for point id
   static constexpr int voxel_id_bits = 64 - point_id_bits;  ///< Use the remaining bits for voxel id
+  double leaf_size_;                                         ///< Voxel size
   double inv_leaf_size;                                     ///< Inverse of the voxel size
   std::vector<Eigen::Vector3i> offsets;                     ///< Neighbor voxel offsets
 
@@ -145,7 +147,7 @@ struct traits<IncrementalVoxelMap<VoxelContents>> {
   static const Eigen::Vector4d& normal(const IncrementalVoxelMap<VoxelContents>& ivox, size_t i) { return ivox.normal(i); }
   static const Eigen::Matrix4d& cov(const IncrementalVoxelMap<VoxelContents>& ivox, size_t i) { return ivox.cov(i); }
   static double intensity(const IncrementalVoxelMap<VoxelContents>& ivox, size_t i) { return ivox.intensity(i); }
-  static uint8_t counter(const IncrementalVoxelMap<VoxelContents>& ivox, size_t i) { return ivox.counter(i); }
+  static uint8_t hit_counter(const IncrementalVoxelMap<VoxelContents>& ivox, size_t i) { return ivox.hit_counter(i); }
 };
 
 }  // namespace frame
