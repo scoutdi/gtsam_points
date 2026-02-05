@@ -145,7 +145,7 @@ struct traits<IncrementalVoxelMap<VoxelContents>> {
   static const Eigen::Vector4d& normal(const IncrementalVoxelMap<VoxelContents>& ivox, size_t i) { return ivox.normal(i); }
   static const Eigen::Matrix4d& cov(const IncrementalVoxelMap<VoxelContents>& ivox, size_t i) { return ivox.cov(i); }
   static double intensity(const IncrementalVoxelMap<VoxelContents>& ivox, size_t i) { return ivox.intensity(i); }
-  static size_t counter(const IncrementalVoxelMap<VoxelContents>& ivox, size_t i) { return ivox.counter(i); }
+  static uint8_t counter(const IncrementalVoxelMap<VoxelContents>& ivox, size_t i) { return ivox.counter(i); }
 };
 
 }  // namespace frame

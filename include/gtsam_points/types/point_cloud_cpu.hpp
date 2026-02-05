@@ -100,6 +100,7 @@ public:
   std::vector<Eigen::Vector4d> normals_storage;
   std::vector<Eigen::Matrix4d> covs_storage;
   std::vector<double> intensities_storage;
+  std::vector<size_t> counters_storage;
 
   std::unordered_map<std::string, std::shared_ptr<void>> aux_attributes_storage;
 };

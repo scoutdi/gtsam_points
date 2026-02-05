@@ -22,11 +22,11 @@ public:
     double min_sq_dist_in_cell = 0.1 * 0.1;  ///< Minimum squared distance between points in a cell.
     size_t max_num_points_in_cell = 20;      ///< Maximum number of points in a cell.
 
-    size_t initial_counter = 5;
-    size_t decay_decrement = 1;
-    size_t hit_increment = 1;
-    size_t decay_limit = 10;
-    size_t max_counter = 100;
+    uint8_t initial_counter = 5;
+    uint8_t decay_decrement = 1;
+    uint8_t hit_increment = 1;
+    uint8_t decay_upper_limit = 10;
+    uint8_t max_counter = 100;
   };
 
   /// @brief Constructor.
@@ -39,11 +39,14 @@ public:
   void add(const Setting& setting, const PointCloud& points, size_t i) {
     bool found_duplicate = false;
 
-    for(int i=0; i<this->points.size(); i++){
-      if((this->points[i] - points.points[i]).squaredNorm() < setting.min_sq_dist_in_cell){
+    for(int j=0; j<this->points.size(); j++){
+      auto distance_sq = (this->points[j] - points.points[i]).squaredNorm();
+      if(distance_sq < setting.min_sq_dist_in_cell){
         found_duplicate = true;
-        increment_counter(setting, i);
         break;
+      }
+      if(distance_sq < setting.min_sq_dist_in_cell * 16){ // If the point is close enough, increment the counter to keep it alive longer
+        increment_counter(setting, j);
       }
     }
 
@@ -65,9 +68,14 @@ public:
   }
 
   void decay(const Setting& setting) {
-    for(size_t i=0; i<points.size(); i++){
-      if(counter[i] < setting.decay_limit){
-        decrement_counter(setting, i);
+    if(counter.size() != points.size()){
+      throw std::runtime_error("Counter size mismatch in FlatContainer::decay");
+    }
+    for(size_t i=0; i<counter.size(); i++){
+      if(counter[i] < 10){
+        if (counter[i] > 0) {
+          counter[i]--;
+        } 
       }
     }
   }
@@ -95,7 +103,7 @@ public:
   std::vector<Eigen::Vector4d> normals;  ///< Normals
   std::vector<Eigen::Matrix4d> covs;     ///< Covariances
   std::vector<double> intensities;       ///< Intensities
-  std::vector<size_t> counter;
+  std::vector<uint8_t> counter;
 
 private:
   void increment_counter(const Setting& setting, size_t index) {
@@ -103,14 +111,6 @@ private:
       counter[index] += setting.hit_increment;
     } else {
       counter[index] = setting.max_counter;
-    }
-  }
-
-  void decrement_counter(const Setting& setting, size_t index) {
-    if (counter[index] >= setting.decay_decrement) {
-      counter[index] -= setting.decay_decrement;
-    } else {
-      counter[index] = 0;
     }
   }
 };
@@ -130,7 +130,7 @@ struct traits<FlatContainer> {
   static const Eigen::Vector4d& normal(const FlatContainer& frame, size_t i) { return frame.normals[i]; }
   static const Eigen::Matrix4d& cov(const FlatContainer& frame, size_t i) { return frame.covs[i]; }
   static double intensity(const FlatContainer& frame, size_t i) { return frame.intensities[i]; }
-  static size_t counter(const FlatContainer& frame, size_t i) { return frame.counter[i]; }
+  static uint8_t counter(const FlatContainer& frame, size_t i) { return frame.counter[i]; }
 };
 
 }  // namespace frame

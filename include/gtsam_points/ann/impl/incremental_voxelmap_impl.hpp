@@ -47,20 +47,20 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points) {
     voxel.add(voxel_setting, points, i);
   }
 
-  if ((++lru_counter) % lru_clear_cycle == 0) {
-    // Remove least recently used voxels
-    auto remove_counter =
-      std::remove_if(flat_voxels.begin(), flat_voxels.end(), [&](const std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>& voxel) {
-        return voxel->first.lru + lru_horizon < lru_counter;
-      });
-    flat_voxels.erase(remove_counter, flat_voxels.end());
+  // if ((++lru_counter) % lru_clear_cycle == 0) {
+  //   // Remove least recently used voxels
+  //   auto remove_counter =
+  //     std::remove_if(flat_voxels.begin(), flat_voxels.end(), [&](const std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>& voxel) {
+  //       return voxel->first.lru + lru_horizon < lru_counter;
+  //     });
+  //   flat_voxels.erase(remove_counter, flat_voxels.end());
 
-    // Rehash
-    voxels.clear();
-    for (size_t i = 0; i < flat_voxels.size(); i++) {
-      voxels[flat_voxels[i]->first.coord] = i;
-    }
-  }
+  //   // Rehash
+  //   voxels.clear();
+  //   for (size_t i = 0; i < flat_voxels.size(); i++) {
+  //     voxels[flat_voxels[i]->first.coord] = i;
+  //   }
+  // }
 
   // Finalize voxel means and covs
   for (auto& voxel : flat_voxels) {
@@ -216,6 +216,7 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data() const {
   visit_points([&](const auto& voxel, const int i) {
     // Dont return invalid points
     size_t counter = frame::counter(voxel, i);
+    frame->counters_storage.emplace_back(counter);
     if(counter == 0)
       return;
 
