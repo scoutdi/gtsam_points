@@ -32,6 +32,7 @@ public:
     uint8_t decay_upper_limit = 10;
     uint8_t max_counter = 100;
     uint8_t ray_trace_decrement = 1;
+    uint8_t valid_obstacle_count = 10;
   };
 
   /// @brief Constructor.

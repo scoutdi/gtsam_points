@@ -7,6 +7,7 @@
 #include <gtsam_points/ann/knn_result.hpp>
 #include <gtsam_points/util/fast_floor.hpp>
 #include <gtsam_points/types/frame_traits.hpp>
+#include <iostream>
 
 namespace gtsam_points {
 
@@ -264,7 +265,7 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data(Eigen::Vector4
   auto frame = std::make_shared<PointCloudCPU>();
   auto radius_w_margin = radius + leaf_size_ * std::sqrt(3.0) / 2.0; // Add half diagonal of voxel to radius
   auto estimated_num_voxels = static_cast<size_t>(4*M_PI * std::pow(radius_w_margin / leaf_size_, 2));
-  frame->points_storage.reserve(estimated_num_voxels * voxel_setting.max_num_points_in_cell);
+  frame->points_storage.reserve(estimated_num_voxels * voxel_setting.max_num_points_in_cell);  
 
   if (has_normals()) {
     frame->normals_storage.reserve(estimated_num_voxels * voxel_setting.max_num_points_in_cell);
@@ -279,13 +280,13 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data(Eigen::Vector4
   auto radius_sq = radius_w_margin * radius_w_margin;
   for (const auto& voxel : flat_voxels) {
     Eigen::Vector3i voxel_id = voxel->first.coord;
-    auto voxel_center = (voxel_id.cast<double>() + Eigen::Vector3d(0.5, 0.5, 0.5)) * leaf_size_;
+    Eigen::Vector3d voxel_center = (voxel_id.cast<double>() + Eigen::Vector3d(0.5, 0.5, 0.5)) * leaf_size_;
     if((voxel_center - center.head<3>()).squaredNorm() > radius_sq)
       continue;
 
     for (int i = 0; i < frame::size(voxel->second); i++) {
         size_t counter = frame::hit_counter(voxel->second, i);
-        if(counter == 0)
+        if(counter < voxel_setting.valid_obstacle_count)
           continue;
         
         frame->counters_storage.emplace_back(counter);
