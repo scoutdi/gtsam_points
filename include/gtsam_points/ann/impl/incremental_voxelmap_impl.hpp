@@ -259,4 +259,56 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data() const {
   return frame;
 }
 
+template <typename VoxelContents>
+PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data(Eigen::Vector4d center, double radius) const{
+  auto frame = std::make_shared<PointCloudCPU>();
+  auto radius_w_margin = radius + leaf_size_ * std::sqrt(3.0) / 2.0; // Add half diagonal of voxel to radius
+  auto estimated_num_voxels = static_cast<size_t>(4*M_PI * std::pow(radius_w_margin / leaf_size_, 2));
+  frame->points_storage.reserve(estimated_num_voxels * voxel_setting.max_num_points_in_cell);
+
+  if (has_normals()) {
+    frame->normals_storage.reserve(estimated_num_voxels * voxel_setting.max_num_points_in_cell);
+  }
+  if (has_covs()) {
+    frame->covs_storage.reserve(estimated_num_voxels * voxel_setting.max_num_points_in_cell);
+  }
+  if (has_intensities()) {
+    frame->intensities_storage.reserve(estimated_num_voxels * voxel_setting.max_num_points_in_cell);
+  }
+
+  auto radius_sq = radius_w_margin * radius_w_margin;
+  for (const auto& voxel : flat_voxels) {
+    Eigen::Vector3i voxel_id = voxel->first.coord;
+    auto voxel_center = (voxel_id.cast<double>() + Eigen::Vector3d(0.5, 0.5, 0.5)) * leaf_size_;
+    if((voxel_center - center.head<3>()).squaredNorm() > radius_sq)
+      continue;
+
+    for (int i = 0; i < frame::size(voxel->second); i++) {
+        size_t counter = frame::hit_counter(voxel->second, i);
+        if(counter == 0)
+          continue;
+        
+        frame->counters_storage.emplace_back(counter);
+        frame->points_storage.emplace_back(frame::point(voxel->second, i));
+        if (frame::has_normals(voxel->second)) {
+          frame->normals_storage.emplace_back(frame::normal(voxel->second, i));
+        }
+        if (frame::has_covs(voxel->second)) {
+          frame->covs_storage.emplace_back(frame::cov(voxel->second, i));
+        }
+        if (frame::has_intensities(voxel->second)) {
+          frame->intensities_storage.emplace_back(frame::intensity(voxel->second, i));
+        }
+    }
+  }
+
+  frame->num_points = frame->points_storage.size();
+  frame->points = frame->points_storage.data();
+  frame->normals = frame->normals_storage.empty() ? nullptr : frame->normals_storage.data();
+  frame->covs = frame->covs_storage.empty() ? nullptr : frame->covs_storage.data();
+  frame->intensities = frame->intensities_storage.empty() ? nullptr : frame->intensities_storage.data();
+
+  return frame;
+}
+
 }  // namespace gtsam_points

@@ -101,6 +101,7 @@ public:
   virtual std::vector<double> voxel_intensities() const;
 
   virtual PointCloudCPU::Ptr voxel_data() const;
+  virtual PointCloudCPU::Ptr voxel_data(Eigen::Vector4d center, double radius) const;
 
   virtual void decay();
   virtual void line_decay(Eigen::Vector4d start, Eigen::Vector4d dir, double length);
