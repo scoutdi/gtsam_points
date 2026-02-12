@@ -105,6 +105,7 @@ public:
 
   virtual void decay();
   virtual void line_decay(Eigen::Vector4d start, Eigen::Vector4d dir, double length);
+  double ray_trace(Eigen::Vector4d start, Eigen::Vector4d dir, double max_range, double ray_width) const;
 
 protected:
   std::vector<Eigen::Vector3i> neighbor_offsets(const int neighbor_voxel_mode) const;

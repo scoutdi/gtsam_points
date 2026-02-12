@@ -31,7 +31,7 @@ public:
     uint8_t hit_increment = 1;
     uint8_t decay_upper_limit = 10;
     uint8_t max_counter = 100;
-    uint8_t ray_trace_decrement = 1;
+    uint8_t ray_trace_decrement = 5;
     uint8_t valid_obstacle_count = 10;
   };
 
@@ -124,6 +124,26 @@ public:
         decrement_counter(setting, i, setting.ray_trace_decrement);
       }
     }
+  }
+
+  double ray_trace(const Setting& setting, const Eigen::Vector4d& start, const Eigen::Vector4d& dir, double max_range, double ray_radius_sq) const {
+    double closest_hit = std::numeric_limits<double>::infinity();
+    for (size_t i = 0; i < points.size(); i++) {
+      if(hit_counter[i] == 0){
+        continue; // Skip invalid points
+      }
+      Eigen::Vector4d pt_to_start = points[i] - start;
+
+      double along_line_progress = pt_to_start.dot(dir);
+      if(along_line_progress < 0.0 || along_line_progress > max_range){ 
+        continue; // Point is outside the line segment
+      }
+      double across_line_distance_sq = (pt_to_start - along_line_progress * dir).squaredNorm();
+      if(across_line_distance_sq < ray_radius_sq){
+        closest_hit = std::min(closest_hit, along_line_progress);
+      }
+    }
+    return closest_hit;
   }
 
 public:

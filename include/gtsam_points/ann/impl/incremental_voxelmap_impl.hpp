@@ -8,6 +8,7 @@
 #include <gtsam_points/util/fast_floor.hpp>
 #include <gtsam_points/types/frame_traits.hpp>
 #include <iostream>
+#include <optional>
 
 namespace gtsam_points {
 
@@ -92,6 +93,36 @@ void IncrementalVoxelMap<VoxelContents>::line_decay(Eigen::Vector4d start, Eigen
 
     progress += leaf_size_; // Step size for line decay
   }
+}
+
+template <typename VoxelContents>
+double IncrementalVoxelMap<VoxelContents>::ray_trace(Eigen::Vector4d start, Eigen::Vector4d dir, double max_range, double ray_radius) const{
+  double progress = 0.0;
+  std::optional<Eigen::Vector3i> last_coord;
+  double ray_radius_sq = ray_radius * ray_radius;
+
+  while(progress < max_range){ 
+    Eigen::Vector4d current_point = start + dir * progress;
+    const Eigen::Vector3i coord = fast_floor(current_point * inv_leaf_size).template head<3>();
+
+    if(last_coord && *last_coord == coord){
+      progress += leaf_size_ * 0.25;
+      continue;
+    }
+    last_coord = coord;
+
+    auto found = voxels.find(coord);
+    if (found != voxels.end()) {
+      const auto& [info, voxel] = *flat_voxels[found->second];
+      double hit_progress = voxel.ray_trace(voxel_setting, start, dir, max_range, ray_radius_sq);
+      if(std::isfinite(hit_progress)){
+        return hit_progress;
+      }
+    }
+
+    progress += 0.5*leaf_size_; 
+  }
+  return std::numeric_limits<double>::infinity();
 }
 
 template <typename VoxelContents>
