@@ -150,7 +150,7 @@ size_t IncrementalVoxelMap<VoxelContents>::knn_search(const double* pt, size_t k
 
     voxel_index = found->second;
     const auto& voxel = flat_voxels[voxel_index]->second;
-    voxel.knn_search(query, result);
+    voxel.knn_search(voxel_setting, query, result);
   }
 
   return result.num_found();
@@ -273,7 +273,7 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data() const {
   visit_points([&](const auto& voxel, const int i) {
     // Dont return invalid points
     size_t counter = frame::hit_counter(voxel, i);
-    if(counter == 0)
+    if(counter < voxel_setting.valid_registration_count)
       return;
     
     frame->counters_storage.emplace_back(counter);

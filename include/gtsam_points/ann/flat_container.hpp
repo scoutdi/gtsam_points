@@ -26,6 +26,18 @@ public:
     double min_sq_dist_in_cell = 0.1 * 0.1;  ///< Minimum squared distance between points in a cell.
     size_t max_num_points_in_cell = 20;      ///< Maximum number of points in a cell.
 
+    void set_hit_counter_params(uint8_t initial_counter, uint8_t decay_decrement, uint8_t hit_increment, double hit_radius, uint8_t decay_upper_limit, uint8_t max_counter, uint8_t ray_trace_decrement, uint8_t valid_obstacle_count, uint8_t valid_registration_count) {
+      this->initial_counter = initial_counter;
+      this->decay_decrement = decay_decrement;
+      this->hit_increment = hit_increment;
+      this->hit_radius_sq = hit_radius * hit_radius;
+      this->decay_upper_limit = decay_upper_limit;
+      this->max_counter = max_counter;
+      this->ray_trace_decrement = ray_trace_decrement;
+      this->valid_obstacle_count = valid_obstacle_count;
+      this->valid_registration_count = valid_registration_count;
+    }
+
     uint8_t initial_counter = 5;
     uint8_t decay_decrement = 1;
     uint8_t hit_increment = 1;
@@ -34,6 +46,7 @@ public:
     uint8_t max_counter = 100;
     uint8_t ray_trace_decrement = 5;
     uint8_t valid_obstacle_count = 10;
+    uint8_t valid_registration_count = 1;
   };
 
   /// @brief Constructor.
@@ -92,12 +105,15 @@ public:
   /// @param pt           Query point
   /// @param result       Result
   template <typename Result>
-  void knn_search(const Eigen::Vector4d& pt, Result& result) const {
+  void knn_search(const Setting& setting, const Eigen::Vector4d& pt, Result& result) const {
     if (points.empty()) {
       return;
     }
 
     for (size_t i = 0; i < points.size(); i++) {
+      if(hit_counter[i] < setting.valid_registration_count){
+        continue; // Skip invalid points
+      }
       const double sq_dist = (points[i] - pt).squaredNorm();
       result.push(i, sq_dist);
     }
