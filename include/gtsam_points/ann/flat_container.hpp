@@ -29,6 +29,7 @@ public:
     uint8_t initial_counter = 5;
     uint8_t decay_decrement = 1;
     uint8_t hit_increment = 1;
+    double hit_radius_sq = 0.2 * 0.2;
     uint8_t decay_upper_limit = 10;
     uint8_t max_counter = 100;
     uint8_t ray_trace_decrement = 5;
@@ -47,12 +48,12 @@ public:
 
     for(int j=0; j<this->points.size(); j++){
       auto distance_sq = (this->points[j] - points.points[i]).squaredNorm();
+      if(distance_sq < setting.hit_radius_sq){
+        increment_counter(setting, j);
+      }
       if(distance_sq < setting.min_sq_dist_in_cell){
         found_duplicate = true;
         break;
-      }
-      if(distance_sq < setting.min_sq_dist_in_cell * 16){ // If the point is close enough, increment the hit_counter to keep it alive longer
-        increment_counter(setting, j);
       }
     }
 
@@ -78,7 +79,7 @@ public:
       throw std::runtime_error("hit_counter size mismatch in FlatContainer::decay");
     }
     for(size_t i=0; i<hit_counter.size(); i++){
-      if(hit_counter[i] < 10){
+      if(hit_counter[i] < setting.decay_upper_limit){
         decrement_counter(setting, i, setting.decay_decrement);
       }
     }
@@ -108,10 +109,6 @@ public:
   /// @param dir          Direction of the line
   /// @param length       Length of the line
   void line_decay(const Setting& setting, const Eigen::Vector4d& start, const Eigen::Vector4d& dir, const double length) {
-    if (points.empty()) {
-      return;
-    }
-
     for (size_t i = 0; i < points.size(); i++) {
       Eigen::Vector4d pt_to_start = points[i] - start;
 
@@ -129,7 +126,7 @@ public:
   double ray_trace(const Setting& setting, const Eigen::Vector4d& start, const Eigen::Vector4d& dir, double max_range, double ray_radius_sq) const {
     double closest_hit = std::numeric_limits<double>::infinity();
     for (size_t i = 0; i < points.size(); i++) {
-      if(hit_counter[i] == 0){
+      if(hit_counter[i] < setting.valid_obstacle_count){
         continue; // Skip invalid points
       }
       Eigen::Vector4d pt_to_start = points[i] - start;

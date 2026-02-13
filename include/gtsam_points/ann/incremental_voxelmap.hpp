@@ -100,7 +100,9 @@ public:
   virtual std::vector<Eigen::Matrix4d> voxel_covs() const;
   virtual std::vector<double> voxel_intensities() const;
 
+  // Get all points in the map
   virtual PointCloudCPU::Ptr voxel_data() const;
+  // Get all points in voxels with voxel center within the given radius from the given center
   virtual PointCloudCPU::Ptr voxel_data(Eigen::Vector4d center, double radius) const;
 
   virtual void decay();

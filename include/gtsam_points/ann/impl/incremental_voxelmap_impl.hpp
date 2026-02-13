@@ -7,7 +7,6 @@
 #include <gtsam_points/ann/knn_result.hpp>
 #include <gtsam_points/util/fast_floor.hpp>
 #include <gtsam_points/types/frame_traits.hpp>
-#include <iostream>
 #include <optional>
 
 namespace gtsam_points {
@@ -50,6 +49,7 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points) {
     voxel.add(voxel_setting, points, i);
   }
 
+  // Remove least recently used voxel logic
   // if ((++lru_counter) % lru_clear_cycle == 0) {
   //   // Remove least recently used voxels
   //   auto remove_counter =
@@ -81,9 +81,14 @@ void IncrementalVoxelMap<VoxelContents>::decay(){
 template <typename VoxelContents>
 void IncrementalVoxelMap<VoxelContents>::line_decay(Eigen::Vector4d start, Eigen::Vector4d dir, double length) {
   double progress = 0.0;
+  std::optional<Eigen::Vector3i> last_coord;
   while(progress < length){
     Eigen::Vector4d current_point = start + dir * progress;
     const Eigen::Vector3i coord = fast_floor(current_point * inv_leaf_size).template head<3>();
+    if(last_coord && *last_coord == coord){
+      progress += leaf_size_ * 0.25;
+      continue;
+    }
 
     auto found = voxels.find(coord);
     if (found != voxels.end()) {
@@ -120,6 +125,8 @@ double IncrementalVoxelMap<VoxelContents>::ray_trace(Eigen::Vector4d start, Eige
       }
     }
 
+    // Do slower progress then for line decay to reduce risk of skipping a thin obstacle.
+    // We accept less precission for decay as it has to run often and decaying is not critical.
     progress += 0.5*leaf_size_; 
   }
   return std::numeric_limits<double>::infinity();
@@ -315,6 +322,7 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data(Eigen::Vector4
     if((voxel_center - center.head<3>()).squaredNorm() > radius_sq)
       continue;
 
+    // Iterate over points in voxel
     for (int i = 0; i < frame::size(voxel->second); i++) {
         size_t counter = frame::hit_counter(voxel->second, i);
         if(counter < voxel_setting.valid_obstacle_count)
