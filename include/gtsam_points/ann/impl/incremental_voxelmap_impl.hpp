@@ -72,9 +72,9 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points) {
 }
 
 template <typename VoxelContents>
-void IncrementalVoxelMap<VoxelContents>::decay(){
-  for (auto& voxel : flat_voxels) {
-    voxel->second.decay(voxel_setting);
+void IncrementalVoxelMap<VoxelContents>::decay(size_t step, size_t offset){
+  for (size_t i = offset; i < flat_voxels.size(); i+=step) {
+    flat_voxels[i]->second.decay(voxel_setting);
   }
 }
 
