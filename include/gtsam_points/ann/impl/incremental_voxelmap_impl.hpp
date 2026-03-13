@@ -79,7 +79,7 @@ void IncrementalVoxelMap<VoxelContents>::decay(size_t step, size_t offset){
 }
 
 template <typename VoxelContents>
-void IncrementalVoxelMap<VoxelContents>::line_decay(Eigen::Vector4d start, Eigen::Vector4d dir, double length) {
+void IncrementalVoxelMap<VoxelContents>::line_decay(Eigen::Vector4d start, Eigen::Vector4d dir, double length, double radius_sq) {
   double progress = 0.0;
   std::optional<Eigen::Vector3i> last_coord;
   while(progress < length){
@@ -93,7 +93,7 @@ void IncrementalVoxelMap<VoxelContents>::line_decay(Eigen::Vector4d start, Eigen
     auto found = voxels.find(coord);
     if (found != voxels.end()) {
       auto& [info, voxel] = *flat_voxels[found->second];
-      voxel.line_decay(voxel_setting, start, dir, length);
+      voxel.line_decay(voxel_setting, start, dir, length, radius_sq);
     }
 
     progress += leaf_size_; // Step size for line decay

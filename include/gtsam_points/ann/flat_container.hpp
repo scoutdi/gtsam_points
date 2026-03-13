@@ -124,7 +124,8 @@ public:
   /// @param start        Start point of the line
   /// @param dir          Direction of the line
   /// @param length       Length of the line
-  void line_decay(const Setting& setting, const Eigen::Vector4d& start, const Eigen::Vector4d& dir, const double length) {
+  /// @param radius_sq    Squared radius around line where points will be decayed
+  void line_decay(const Setting& setting, const Eigen::Vector4d& start, const Eigen::Vector4d& dir, const double length, const double radius_sq) {
     for (size_t i = 0; i < points.size(); i++) {
       Eigen::Vector4d pt_to_start = points[i] - start;
 
@@ -133,7 +134,7 @@ public:
         continue; // Point is outside the line segment
       }
       double across_line_distance_sq = (pt_to_start - along_line_progress * dir).squaredNorm();
-      if(across_line_distance_sq < setting.min_sq_dist_in_cell){
+      if (across_line_distance_sq < radius_sq) {
         decrement_counter(setting, i, setting.ray_trace_decrement);
       }
     }

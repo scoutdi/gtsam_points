@@ -106,7 +106,7 @@ public:
   virtual PointCloudCPU::Ptr voxel_data(Eigen::Vector4d center, double radius) const;
 
   virtual void decay(size_t step = 1, size_t offset=0);
-  virtual void line_decay(Eigen::Vector4d start, Eigen::Vector4d dir, double length);
+  virtual void line_decay(Eigen::Vector4d start, Eigen::Vector4d dir, double length, double radius_sq);
   double ray_trace(Eigen::Vector4d start, Eigen::Vector4d dir, double max_range, double ray_width) const;
 
 protected:
