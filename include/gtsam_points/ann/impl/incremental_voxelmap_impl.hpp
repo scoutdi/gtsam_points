@@ -32,6 +32,10 @@ void IncrementalVoxelMap<VoxelContents>::clear() {
 
 template <typename VoxelContents>
 void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points) {
+  for (auto& voxel : flat_voxels) {
+    voxel->second.initialize_iteration();
+  }
+
   // Insert points to the voxelmap
   for (size_t i = 0; i < points.size(); i++) {
     const Eigen::Vector3i coord = fast_floor(points.points[i] * inv_leaf_size).template head<3>();
@@ -106,7 +110,7 @@ double IncrementalVoxelMap<VoxelContents>::ray_trace(Eigen::Vector4d start, Eige
   std::optional<Eigen::Vector3i> last_coord;
   double ray_radius_sq = ray_radius * ray_radius;
 
-  while(progress < max_range){ 
+  while(progress < max_range){
     Eigen::Vector4d current_point = start + dir * progress;
     const Eigen::Vector3i coord = fast_floor(current_point * inv_leaf_size).template head<3>();
 
@@ -127,7 +131,7 @@ double IncrementalVoxelMap<VoxelContents>::ray_trace(Eigen::Vector4d start, Eige
 
     // Do slower progress then for line decay to reduce risk of skipping a thin obstacle.
     // We accept less precission for decay as it has to run often and decaying is not critical.
-    progress += 0.5*leaf_size_; 
+    progress += 0.5*leaf_size_;
   }
   return std::numeric_limits<double>::infinity();
 }
@@ -275,7 +279,7 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data() const {
     size_t counter = frame::hit_counter(voxel, i);
     if(counter < voxel_setting.valid_registration_count)
       return;
-    
+
     frame->counters_storage.emplace_back(counter);
     frame->points_storage.emplace_back(frame::point(voxel, i));
     if (frame::has_normals(voxel)) {
@@ -303,7 +307,7 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data(Eigen::Vector4
   auto frame = std::make_shared<PointCloudCPU>();
   auto radius_w_margin = radius + leaf_size_ * std::sqrt(3.0) / 2.0; // Add half diagonal of voxel to radius
   auto estimated_num_voxels = static_cast<size_t>(4*M_PI * std::pow(radius_w_margin / leaf_size_, 2));
-  frame->points_storage.reserve(estimated_num_voxels * voxel_setting.max_num_points_in_cell);  
+  frame->points_storage.reserve(estimated_num_voxels * voxel_setting.max_num_points_in_cell);
 
   if (has_normals()) {
     frame->normals_storage.reserve(estimated_num_voxels * voxel_setting.max_num_points_in_cell);
@@ -327,7 +331,7 @@ PointCloudCPU::Ptr IncrementalVoxelMap<VoxelContents>::voxel_data(Eigen::Vector4
         size_t counter = frame::hit_counter(voxel->second, i);
         if(counter < voxel_setting.valid_obstacle_count)
           continue;
-        
+
         frame->counters_storage.emplace_back(counter);
         frame->points_storage.emplace_back(frame::point(voxel->second, i));
         if (frame::has_normals(voxel->second)) {

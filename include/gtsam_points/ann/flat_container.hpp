@@ -18,7 +18,7 @@ public:
   struct Setting {
     void set_min_dist_in_cell(double dist) {
       this->min_dist_in_cell = dist;
-      this->min_sq_dist_in_cell = dist * dist; 
+      this->min_sq_dist_in_cell = dist * dist;
     }
     void set_max_num_points_in_cell(size_t num_points) { this->max_num_points_in_cell = num_points; }
 
@@ -76,6 +76,7 @@ public:
 
     this->points.emplace_back(points.points[i]);
     this->hit_counter.emplace_back(setting.initial_counter);
+    this->hit_counter_adjusted_this_iteration.emplace_back(false);
     if (points.normals) {
       this->normals.emplace_back(points.normals[i]);
     }
@@ -95,6 +96,12 @@ public:
       if(hit_counter[i] < setting.decay_upper_limit){
         decrement_counter(setting, i, setting.decay_decrement);
       }
+    }
+  }
+
+  void initialize_iteration(){
+    for(size_t i=0; i<hit_counter_adjusted_this_iteration.size(); i++){
+      hit_counter_adjusted_this_iteration[i] = false;
     }
   }
 
@@ -130,7 +137,7 @@ public:
       Eigen::Vector4d pt_to_start = points[i] - start;
 
       double along_line_progress = pt_to_start.dot(dir);
-      if(along_line_progress < 0.0 || along_line_progress > (length-setting.min_dist_in_cell)){ 
+      if(along_line_progress < 0.0 || along_line_progress > (length-setting.min_dist_in_cell)){
         continue; // Point is outside the line segment
       }
       double across_line_distance_sq = (pt_to_start - along_line_progress * dir).squaredNorm();
@@ -149,7 +156,7 @@ public:
       Eigen::Vector4d pt_to_start = points[i] - start;
 
       double along_line_progress = pt_to_start.dot(dir);
-      if(along_line_progress < 0.0 || along_line_progress > max_range){ 
+      if(along_line_progress < 0.0 || along_line_progress > max_range){
         continue; // Point is outside the line segment
       }
       double across_line_distance_sq = (pt_to_start - along_line_progress * dir).squaredNorm();
@@ -166,22 +173,31 @@ public:
   std::vector<Eigen::Matrix4d> covs;     ///< Covariances
   std::vector<double> intensities;       ///< Intensities
   std::vector<uint8_t> hit_counter;
+  std::vector<bool> hit_counter_adjusted_this_iteration;
 
 private:
   void increment_counter(const Setting& setting, size_t index) {
+    if(hit_counter_adjusted_this_iteration[index])
+      return; // Already adjusted this iteration, skip to prevent multiple increments
+
     if (hit_counter[index] + setting.hit_increment <= setting.max_counter) {
       hit_counter[index] += setting.hit_increment;
     } else {
       hit_counter[index] = setting.max_counter;
     }
+    hit_counter_adjusted_this_iteration[index] = true;
   }
 
   void decrement_counter(const Setting& setting, size_t index, uint8_t decrement) {
+    if(hit_counter_adjusted_this_iteration[index])
+      return; // Already adjusted this iteration, skip to prevent multiple decrements, or decrement of a poit that was seen this iteration.
+
     if (hit_counter[index] > decrement) {
       hit_counter[index] -= decrement;
     } else {
       hit_counter[index] = 0;
     }
+    hit_counter_adjusted_this_iteration[index] = true;
   }
 };
 
