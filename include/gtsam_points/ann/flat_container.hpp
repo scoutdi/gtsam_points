@@ -132,12 +132,12 @@ public:
   /// @param dir          Direction of the line
   /// @param length       Length of the line
   /// @param radius_sq    Squared radius around line where points will be decayed
-  void line_decay(const Setting& setting, const Eigen::Vector4d& start, const Eigen::Vector4d& dir, const double length, const double radius_sq) {
+  void line_decay(const Setting& setting, const Eigen::Vector4d& start, const Eigen::Vector4d& dir, const double start_length, const double length, const double radius_sq) {
     for (size_t i = 0; i < points.size(); i++) {
       Eigen::Vector4d pt_to_start = points[i] - start;
 
       double along_line_progress = pt_to_start.dot(dir);
-      if(along_line_progress < 0.0 || along_line_progress > (length-setting.min_dist_in_cell)){
+      if(along_line_progress < start_length || along_line_progress > (length-setting.min_dist_in_cell)){
         continue; // Point is outside the line segment
       }
       double across_line_distance_sq = (pt_to_start - along_line_progress * dir).squaredNorm();
