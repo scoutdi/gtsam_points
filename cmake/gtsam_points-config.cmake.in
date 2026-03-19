@@ -12,13 +12,14 @@ include_guard()
 set(GTSAM_POINTS_USE_TBB @GTSAM_POINTS_USE_TBB@)
 set(GTSAM_POINTS_USE_OPENMP @GTSAM_POINTS_USE_OPENMP@)
 set(GTSAM_POINTS_USE_CUDA @GTSAM_POINTS_USE_CUDA@)
+set(GTSAM_POINTS_GTSAM_VERSION @GTSAM_REQUIRED_VERSION@)
 
 get_filename_component(gtsam_points_CURRENT_CONFIG_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${gtsam_points_CURRENT_CONFIG_DIR}")
 
 include(CMakeFindDependencyMacro)
 find_dependency(Eigen3 REQUIRED)
-find_dependency(GTSAM REQUIRED)
+find_dependency(GTSAM @GTSAM_REQUIRED_VERSION@ EXACT)
 find_dependency(OpenMP REQUIRED)
 find_dependency(Boost REQUIRED COMPONENTS filesystem)
 

@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
-project(gtsam_points VERSION 1.0.7 LANGUAGES CXX)
+# First three digits are upstream gtsam_points version, last is our fork version
+set(SCOUT_CUSTOM_VERSION 1)
+project(gtsam_points VERSION 1.0.7.${SCOUT_CUSTOM_VERSION} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} "${CMAKE_CURRENT_LIST_DIR}/cmake")
@@ -37,7 +39,17 @@ if(BUILD_WITH_MARCH_NATIVE)
 endif()
 
 find_package(Boost REQUIRED COMPONENTS filesystem)
-find_package(GTSAM REQUIRED)
+# First three digits are upstream gtsam version, last is our fork version
+set(GTSAM_REQUIRED_VERSION 4.3.0.1)
+find_package(GTSAM ${GTSAM_REQUIRED_VERSION} EXACT)
+if(NOT GTSAM_FOUND)
+  message(
+    FATAL_ERROR
+      "Could not find a compatible GTSAM version (need == ${GTSAM_REQUIRED_VERSION}, found ${GTSAM_VERSION}).\n"
+      "Check that gtsam is not in catkin config ignorelist.\n"
+      "Run ./Tools/update-source-dependencies.sh and try again"
+  )
+endif()
 find_package(Eigen3 REQUIRED)
 
 if(BUILD_WITH_TBB)
@@ -358,7 +370,7 @@ configure_package_config_file(
 )
 write_basic_package_version_file(
   "${CMAKE_CURRENT_BINARY_DIR}/gtsam_points-config-version.cmake"
-  VERSION ${VERSION}
+  VERSION ${PROJECT_VERSION}
   COMPATIBILITY SameMajorVersion
 )
 install(FILES
