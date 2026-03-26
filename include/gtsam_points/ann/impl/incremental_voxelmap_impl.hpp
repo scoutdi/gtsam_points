@@ -18,7 +18,14 @@ IncrementalVoxelMap<VoxelContents>::IncrementalVoxelMap(double leaf_size)
   lru_horizon(10),
   lru_clear_cycle(10),
   lru_counter(0),
-  offsets(neighbor_offsets(7)) {}
+  offsets(neighbor_offsets(7)) {
+  // Pre-allocate to reduce rehash spikes for large maps.
+  // max_load_factor(4.0) allows 4x fill before rehash (default is 1.0),
+  // trading slightly longer chains for far fewer rehash events.
+  voxels.max_load_factor(4.0);
+  voxels.reserve(1 << 18);
+  flat_voxels.reserve(1 << 18);
+}
 
 template <typename VoxelContents>
 IncrementalVoxelMap<VoxelContents>::~IncrementalVoxelMap() {}
