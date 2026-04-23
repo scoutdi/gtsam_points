@@ -56,12 +56,12 @@ public:
   size_t size() const { return points.size(); }
 
   /// @brief Add a point to the container.
-  void add(const Setting& setting, const PointCloud& points, size_t i) {
+  void add(const Setting& setting, const PointCloud& points, size_t i, bool do_hit_increment) {
     bool found_duplicate = false;
 
     for(int j=0; j<this->points.size(); j++){
       auto distance_sq = (this->points[j] - points.points[i]).squaredNorm();
-      if(distance_sq < setting.hit_radius_sq){
+      if (do_hit_increment && distance_sq < setting.hit_radius_sq) {
         increment_counter(setting, j);
       }
       if(distance_sq < setting.min_sq_dist_in_cell){

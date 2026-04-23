@@ -31,7 +31,7 @@ void IncrementalVoxelMap<VoxelContents>::clear() {
 }
 
 template <typename VoxelContents>
-void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points) {
+void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool do_hit_increment) {
   for (auto& voxel : flat_voxels) {
     voxel->second.initialize_iteration();
   }
@@ -50,7 +50,7 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points) {
 
     auto& [info, voxel] = *flat_voxels[found->second];
     info.lru = lru_counter;
-    voxel.add(voxel_setting, points, i);
+    voxel.add(voxel_setting, points, i, do_hit_increment);
   }
 
   // Remove least recently used voxel logic
