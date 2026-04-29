@@ -26,7 +26,7 @@ public:
     double min_sq_dist_in_cell = 0.1 * 0.1;  ///< Minimum squared distance between points in a cell.
     size_t max_num_points_in_cell = 20;      ///< Maximum number of points in a cell.
 
-    void set_hit_counter_params(uint8_t initial_counter, uint8_t decay_decrement, uint8_t hit_increment, double hit_radius, uint8_t decay_upper_limit, uint8_t max_counter, uint8_t ray_trace_decrement, uint8_t valid_obstacle_count, uint8_t valid_registration_count) {
+    void set_hit_counter_params(uint8_t initial_counter, uint8_t decay_decrement, uint8_t hit_increment, double hit_radius, uint8_t decay_upper_limit, uint8_t max_counter, uint8_t ray_trace_decrement, uint8_t valid_obstacle_count, uint8_t valid_registration_count, uint8_t limited_hit_counter_max) {
       this->initial_counter = initial_counter;
       this->decay_decrement = decay_decrement;
       this->hit_increment = hit_increment;
@@ -36,6 +36,7 @@ public:
       this->ray_trace_decrement = ray_trace_decrement;
       this->valid_obstacle_count = valid_obstacle_count;
       this->valid_registration_count = valid_registration_count;
+      this->limited_hit_counter_max = limited_hit_counter_max;
     }
 
     uint8_t initial_counter = 5;
@@ -47,6 +48,7 @@ public:
     uint8_t ray_trace_decrement = 5;
     uint8_t valid_obstacle_count = 10;
     uint8_t valid_registration_count = 1;
+    uint8_t limited_hit_counter_max = 10;
   };
 
   /// @brief Constructor.
@@ -56,13 +58,14 @@ public:
   size_t size() const { return points.size(); }
 
   /// @brief Add a point to the container.
-  void add(const Setting& setting, const PointCloud& points, size_t i, bool do_hit_increment) {
+  void add(const Setting& setting, const PointCloud& points, size_t i, bool limit_hit_increment) {
     bool found_duplicate = false;
 
     for(int j=0; j<this->points.size(); j++){
       auto distance_sq = (this->points[j] - points.points[i]).squaredNorm();
-      if (do_hit_increment && distance_sq < setting.hit_radius_sq) {
-        increment_counter(setting, j);
+      if (distance_sq < setting.hit_radius_sq) {
+        auto max_hit_counter = limit_hit_increment ? setting.limited_hit_counter_max : setting.max_counter;
+        increment_counter(setting, j, max_hit_counter);
       }
       if(distance_sq < setting.min_sq_dist_in_cell){
         found_duplicate = true;
@@ -176,14 +179,14 @@ public:
   std::vector<bool> hit_counter_adjusted_this_iteration;
 
 private:
-  void increment_counter(const Setting& setting, size_t index) {
+  void increment_counter(const Setting& setting, size_t index, uint8_t max_counter) {
     if(hit_counter_adjusted_this_iteration[index])
       return; // Already adjusted this iteration, skip to prevent multiple increments
 
-    if (hit_counter[index] + setting.hit_increment <= setting.max_counter) {
+    if (hit_counter[index] + setting.hit_increment <= max_counter) {
       hit_counter[index] += setting.hit_increment;
     } else {
-      hit_counter[index] = setting.max_counter;
+      hit_counter[index] = max_counter;
     }
     hit_counter_adjusted_this_iteration[index] = true;
   }

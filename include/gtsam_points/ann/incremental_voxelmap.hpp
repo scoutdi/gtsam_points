@@ -65,7 +65,7 @@ public:
   /// @brief Insert points to the voxelmap.
   /// @param points Point cloud
   /// @param T      Transformation matrix
-  virtual void insert(const PointCloud& points, bool do_hit_increment = true);
+  virtual void insert(const PointCloud& points, bool limit_hit_increment = true);
 
   /// @brief  Find k nearest neighbors.
   /// @param pt           Query point
