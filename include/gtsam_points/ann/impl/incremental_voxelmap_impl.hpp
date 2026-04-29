@@ -16,8 +16,8 @@ IncrementalVoxelMap<VoxelContents>::IncrementalVoxelMap(double leaf_size)
 : leaf_size_(leaf_size),
   inv_leaf_size(1.0 / leaf_size),
   lru_horizon(10),
-  lru_clear_cycle(10),
   lru_counter(0),
+  max_num_voxels_(20000),
   offsets(neighbor_offsets(7)) {}
 
 template <typename VoxelContents>
@@ -31,7 +31,7 @@ void IncrementalVoxelMap<VoxelContents>::clear() {
 }
 
 template <typename VoxelContents>
-void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool do_hit_increment) {
+void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool limit_hit_increment) {
   for (auto& voxel : flat_voxels) {
     voxel->second.initialize_iteration();
   }
@@ -50,28 +50,58 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool d
 
     auto& [info, voxel] = *flat_voxels[found->second];
     info.lru = lru_counter;
-    voxel.add(voxel_setting, points, i, do_hit_increment);
+    voxel.add(voxel_setting, points, i, limit_hit_increment);
   }
-
-  // Remove least recently used voxel logic
-  // if ((++lru_counter) % lru_clear_cycle == 0) {
-  //   // Remove least recently used voxels
-  //   auto remove_counter =
-  //     std::remove_if(flat_voxels.begin(), flat_voxels.end(), [&](const std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>& voxel) {
-  //       return voxel->first.lru + lru_horizon < lru_counter;
-  //     });
-  //   flat_voxels.erase(remove_counter, flat_voxels.end());
-
-  //   // Rehash
-  //   voxels.clear();
-  //   for (size_t i = 0; i < flat_voxels.size(); i++) {
-  //     voxels[flat_voxels[i]->first.coord] = i;
-  //   }
-  // }
 
   // Finalize voxel means and covs
   for (auto& voxel : flat_voxels) {
     voxel->second.finalize();
+  }
+
+  lru_counter++;
+  // Eviction: triggered either by exceeding the voxel cap, or by accumulating too many empty
+  // voxels (created when decay/line_decay drained all points from a voxel). Empty voxels are
+  // cheap individually but grow unboundedly with sporadic noise, so we sweep them when they
+  // exceed a fraction of the total. Tier-1 (empty removal) does the actual cleanup in both
+  // cases; tier-2 (LRU eviction) only runs if we're still over the cap afterwards.
+  last_evicted_voxels_ = 0;
+  size_t empty_voxel_count = 0;
+  for (const auto& v : flat_voxels) {
+    if (frame::size(v->second) == 0) {
+      ++empty_voxel_count;
+    }
+  }
+  const bool over_cap = max_num_voxels_ > 0 && flat_voxels.size() > max_num_voxels_;
+  // Threshold of 1/4: bounds wasted empty-voxel memory to ~33% over the live set, while
+  // amortizing the rebuild cost (each rebuild reclaims at least 25% of the storage).
+  const bool too_many_empty = empty_voxel_count > flat_voxels.size() / 4;
+  if (over_cap || too_many_empty) {
+    const size_t before_eviction = flat_voxels.size();
+    // Tier 1: Remove empty voxels (those with no points left after pruning)
+    auto remove_it = std::remove_if(flat_voxels.begin(), flat_voxels.end(), [](const std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>& v) {
+      return frame::size(v->second) == 0;
+    });
+    flat_voxels.erase(remove_it, flat_voxels.end());
+
+    // Tier 2: If still over cap, evict oldest voxels by LRU age
+    if (max_num_voxels_ > 0 && flat_voxels.size() > max_num_voxels_) {
+      // Sort by lru ascending (oldest first)
+      std::sort(
+        flat_voxels.begin(),
+        flat_voxels.end(),
+        [](const std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>& a, const std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>& b) {
+          return a->first.lru < b->first.lru;
+        });
+      flat_voxels.erase(flat_voxels.begin(), flat_voxels.begin() + (flat_voxels.size() - max_num_voxels_));
+    }
+
+    // Rebuild the hash map
+    voxels.clear();
+    for (size_t i = 0; i < flat_voxels.size(); i++) {
+      voxels[flat_voxels[i]->first.coord] = i;
+    }
+
+    last_evicted_voxels_ = before_eviction - flat_voxels.size();
   }
 }
 
@@ -79,6 +109,7 @@ template <typename VoxelContents>
 void IncrementalVoxelMap<VoxelContents>::decay(size_t step, size_t offset){
   for (size_t i = offset; i < flat_voxels.size(); i+=step) {
     flat_voxels[i]->second.decay(voxel_setting);
+    flat_voxels[i]->second.remove_dead_points();
   }
 }
 
