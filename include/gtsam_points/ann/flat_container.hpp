@@ -102,6 +102,31 @@ public:
     }
   }
 
+  /// @brief Remove points with hit_counter == 0 (dead points).
+  void remove_dead_points() {
+    // First copy forward all good points to take the space of the points with 0 counter
+    // Then delete the end of the list now only consisting of copies of points that have been moved forward
+    size_t write = 0;
+    for (size_t read = 0; read < points.size(); read++) {
+      if (hit_counter[read] == 0) continue;
+      if (write != read) {
+        points[write] = points[read];
+        hit_counter[write] = hit_counter[read];
+        hit_counter_adjusted_this_iteration[write] = hit_counter_adjusted_this_iteration[read];
+        if (!normals.empty()) normals[write] = normals[read];
+        if (!covs.empty()) covs[write] = covs[read];
+        if (!intensities.empty()) intensities[write] = intensities[read];
+      }
+      write++;
+    }
+    points.resize(write);
+    hit_counter.resize(write);
+    hit_counter_adjusted_this_iteration.resize(write);
+    if (!normals.empty()) normals.resize(write);
+    if (!covs.empty()) covs.resize(write);
+    if (!intensities.empty()) intensities.resize(write);
+  }
+
   void initialize_iteration(){
     for(size_t i=0; i<hit_counter_adjusted_this_iteration.size(); i++){
       hit_counter_adjusted_this_iteration[i] = false;

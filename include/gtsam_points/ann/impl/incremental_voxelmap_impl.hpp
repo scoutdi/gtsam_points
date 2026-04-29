@@ -79,6 +79,7 @@ template <typename VoxelContents>
 void IncrementalVoxelMap<VoxelContents>::decay(size_t step, size_t offset){
   for (size_t i = offset; i < flat_voxels.size(); i+=step) {
     flat_voxels[i]->second.decay(voxel_setting);
+    flat_voxels[i]->second.remove_dead_points();
   }
 }
 
