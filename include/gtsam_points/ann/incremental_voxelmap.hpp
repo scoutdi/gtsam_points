@@ -21,8 +21,8 @@ public:
   VoxelInfo(const Eigen::Vector3i& coord, size_t lru) : lru(lru), coord(coord) {}
 
 public:
-  size_t lru;             ///< Last used time
-  Eigen::Vector3i coord;  ///< Voxel coordinate
+  size_t lru;                     ///< Last used time
+  Eigen::Vector3i coord;          ///< Voxel coordinate
 };
 
 /// @brief Incremental voxelmap.
@@ -44,10 +44,10 @@ public:
 
   /// @brief Voxel resolution.
   void set_voxel_resolution(const double leaf_size) { inv_leaf_size = 1.0 / leaf_size; }
-  /// @brief LRU cache clearing cycle.
-  void set_lru_clear_cycle(const int lru_clear_cycle) { this->lru_clear_cycle = lru_clear_cycle; }
-  /// @brief LRU cache horizon.
+  /// @brief LRU cache horizon (used during cap-driven eviction).
   void set_lru_horizon(const int lru_horizon) { this->lru_horizon = lru_horizon; }
+  /// @brief Maximum number of voxels. Eviction triggers when exceeded. 0 = disabled.
+  void set_max_num_voxels(const size_t max_num_voxels) { this->max_num_voxels_ = max_num_voxels; }
   /// @brief Neighboring voxel search mode (1, 7, 19, or 27).
   void set_neighbor_voxel_mode(const int mode) { offsets = neighbor_offsets(mode); }
   /// @brief Voxel setting.
@@ -58,6 +58,16 @@ public:
 
   /// @brief Number of voxels in the voxelmap.
   size_t num_voxels() const { return flat_voxels.size(); }
+
+  /// @brief Total number of points across all voxels.
+  size_t num_points() const {
+    size_t count = 0;
+    for (const auto& v : flat_voxels) count += frame::size(v->second);
+    return count;
+  }
+
+  /// @brief Number of voxels evicted during the last insert() call.
+  size_t last_evicted_voxels() const { return last_evicted_voxels_; }
 
   /// @brief Clear the voxelmap.
   virtual void clear();
@@ -129,9 +139,12 @@ protected:
   double inv_leaf_size;                                     ///< Inverse of the voxel size
   std::vector<Eigen::Vector3i> offsets;                     ///< Neighbor voxel offsets
 
-  size_t lru_horizon;      ///< LRU horizon size. Voxels that have not been accessed for lru_horizon steps are deleted.
-  size_t lru_clear_cycle;  ///< LRU clear cycle. Voxel deletion is performed every lru_clear_cycle steps.
-  size_t lru_counter;      ///< LRU counter. Incremented every step.
+  size_t lru_horizon;       ///< LRU horizon size. Used as age threshold during cap-driven eviction.
+  size_t lru_counter;       ///< LRU counter. Incremented every insert() call.
+  size_t max_num_voxels_;   ///< Maximum number of voxels before eviction triggers. 0 = disabled.
+
+  size_t last_evicted_voxels_ = 0;              ///< Number of voxels evicted during the last insert() call.
+
 
   typename VoxelContents::Setting voxel_setting;                                  ///< Voxel setting.
   std::vector<std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>> flat_voxels;  ///< Voxel contents.
