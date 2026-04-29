@@ -21,8 +21,8 @@ public:
   VoxelInfo(const Eigen::Vector3i& coord, size_t lru) : lru(lru), coord(coord) {}
 
 public:
-  size_t lru;                     ///< Last used time
-  Eigen::Vector3i coord;          ///< Voxel coordinate
+  size_t lru;             ///< Last used time
+  Eigen::Vector3i coord;  ///< Voxel coordinate
 };
 
 /// @brief Incremental voxelmap.
