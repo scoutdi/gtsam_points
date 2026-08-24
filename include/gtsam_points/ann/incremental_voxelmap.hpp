@@ -48,6 +48,18 @@ public:
   void set_lru_horizon(const int lru_horizon) { this->lru_horizon = lru_horizon; }
   /// @brief Maximum number of voxels. Eviction triggers when exceeded. 0 = disabled.
   void set_max_num_voxels(const size_t max_num_voxels) { this->max_num_voxels_ = max_num_voxels; }
+
+  /// @brief Set the point-count cap. Eviction fires on EITHER cap (voxels or points), whichever is
+  ///        exceeded first. 0 = off. The point cap bounds registration cost more directly than the
+  ///        voxel cap, since kNN cost scales with points-per-voxel rather than voxel count.
+  /// @param max_num_points  High-water mark: eviction triggers above this.
+  /// @param target_num_points  Low-water mark: evict down to this, not merely back to the cap, so
+  ///        the next insert does not immediately re-trigger. 0 means use max_num_points (no
+  ///        hysteresis), which makes eviction fire on nearly every scan once the cap is reached.
+  void set_max_num_points_in_map(const size_t max_num_points, const size_t target_num_points = 0) {
+    this->max_num_points_ = max_num_points;
+    this->target_num_points_ = (target_num_points > 0 && target_num_points <= max_num_points) ? target_num_points : max_num_points;
+  }
   /// @brief Neighboring voxel search mode (1, 7, 19, or 27).
   void set_neighbor_voxel_mode(const int mode) { offsets = neighbor_offsets(mode); }
   /// @brief Voxel setting.
@@ -142,6 +154,8 @@ protected:
   size_t lru_horizon;       ///< LRU horizon size. Used as age threshold during cap-driven eviction.
   size_t lru_counter;       ///< LRU counter. Incremented every insert() call.
   size_t max_num_voxels_;   ///< Maximum number of voxels before eviction triggers. 0 = disabled.
+  size_t max_num_points_ = 0;  ///< Maximum total points before eviction triggers. 0 = disabled.
+  size_t target_num_points_ = 0;  ///< Point count to evict down to once triggered (low-water mark).
 
   size_t last_evicted_voxels_ = 0;              ///< Number of voxels evicted during the last insert() call.
 

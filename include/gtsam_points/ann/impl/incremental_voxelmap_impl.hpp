@@ -66,12 +66,20 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
   // cases; tier-2 (LRU eviction) only runs if we're still over the cap afterwards.
   last_evicted_voxels_ = 0;
   size_t empty_voxel_count = 0;
+  size_t total_points = 0;
   for (const auto& v : flat_voxels) {
-    if (frame::size(v->second) == 0) {
+    const size_t n = frame::size(v->second);
+    total_points += n;
+    if (n == 0) {
       ++empty_voxel_count;
     }
   }
-  const bool over_cap = max_num_voxels_ > 0 && flat_voxels.size() > max_num_voxels_;
+  // Two independent caps. The voxel cap bounds spatial extent and memory; the point cap bounds
+  // registration cost, which scales with points-per-voxel rather than with voxel count, so a map
+  // can be well under the voxel cap while still getting steadily more expensive to search.
+  const bool over_voxel_cap = max_num_voxels_ > 0 && flat_voxels.size() > max_num_voxels_;
+  const bool over_point_cap = max_num_points_ > 0 && total_points > max_num_points_;
+  const bool over_cap = over_voxel_cap || over_point_cap;
   // Threshold of 1/4: bounds wasted empty-voxel memory to ~33% over the live set, while
   // amortizing the rebuild cost (each rebuild reclaims at least 25% of the storage).
   const bool too_many_empty = empty_voxel_count > flat_voxels.size() / 4;
@@ -83,8 +91,11 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
     });
     flat_voxels.erase(remove_it, flat_voxels.end());
 
-    // Tier 2: If still over cap, evict oldest voxels by LRU age
-    if (max_num_voxels_ > 0 && flat_voxels.size() > max_num_voxels_) {
+    // Tier 2: If still over either cap, evict oldest voxels by LRU age. Removing empty voxels in
+    // tier 1 did not change the point total, so total_points is still valid here.
+    const bool still_over_voxels = max_num_voxels_ > 0 && flat_voxels.size() > max_num_voxels_;
+    const bool still_over_points = max_num_points_ > 0 && total_points > max_num_points_;
+    if (still_over_voxels || still_over_points) {
       // Sort by lru ascending (oldest first)
       std::sort(
         flat_voxels.begin(),
@@ -92,7 +103,24 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
         [](const std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>& a, const std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>& b) {
           return a->first.lru < b->first.lru;
         });
-      flat_voxels.erase(flat_voxels.begin(), flat_voxels.begin() + (flat_voxels.size() - max_num_voxels_));
+
+      size_t num_to_evict = still_over_voxels ? flat_voxels.size() - max_num_voxels_ : 0;
+
+      // Then keep taking the oldest until the point total is under the low-water target -- not
+      // merely under the cap, or the next insert re-triggers and eviction runs on nearly every
+      // scan. Bounded by flat_voxels.size() - 1 so a small target cannot empty the map entirely.
+      if (max_num_points_ > 0) {
+        size_t remaining_points = total_points;
+        for (size_t i = 0; i < num_to_evict; i++) {
+          remaining_points -= frame::size(flat_voxels[i]->second);
+        }
+        while (remaining_points > target_num_points_ && num_to_evict + 1 < flat_voxels.size()) {
+          remaining_points -= frame::size(flat_voxels[num_to_evict]->second);
+          num_to_evict++;
+        }
+      }
+
+      flat_voxels.erase(flat_voxels.begin(), flat_voxels.begin() + num_to_evict);
     }
 
     // Rebuild the hash map
