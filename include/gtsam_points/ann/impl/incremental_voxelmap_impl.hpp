@@ -118,36 +118,49 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
     const bool still_over_voxels = max_num_voxels_ > 0 && flat_voxels.size() > max_num_voxels_;
     const bool still_over_points = max_num_points_ > 0 && total_points > max_num_points_;
     if (still_over_voxels || still_over_points) {
-      // Rank voxel INDICES by lru ascending (oldest first) into a side array, instead of sorting
-      // flat_voxels itself: reordering flat_voxels directly would move survivors to new positions
-      // without updating `voxels`, which only gets patched for the entries remove_at() below
-      // actually touches.
-      std::vector<size_t> order(flat_voxels.size());
-      std::iota(order.begin(), order.end(), 0);
-      std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
-        return flat_voxels[a]->first.lru < flat_voxels[b]->first.lru;
-      });
+      // Extract the oldest voxels one at a time from a min-heap over indices (ranked by lru),
+      // rather than fully sorting all of flat_voxels by lru: eviction is typically a small
+      // fraction of the map (e.g. steady-state operation right at the cap evicts just enough to
+      // make room for the next scan), so ranking the entire map to find the few oldest is wasted
+      // work. Heapify is still O(N), but each extraction is only O(log N), against O(N log N) to
+      // rank everything up front.
+      std::vector<size_t> heap(flat_voxels.size());
+      std::iota(heap.begin(), heap.end(), 0);
+      const auto older = [&](size_t a, size_t b) {
+        return flat_voxels[a]->first.lru > flat_voxels[b]->first.lru;
+      };
+      std::make_heap(heap.begin(), heap.end(), older);
+      size_t heap_end = heap.size();
+      const auto pop_oldest = [&]() {
+        std::pop_heap(heap.begin(), heap.begin() + heap_end, older);
+        return heap[--heap_end];
+      };
 
       size_t num_to_evict = still_over_voxels ? flat_voxels.size() - max_num_voxels_ : 0;
+      std::vector<size_t> victims;
+      victims.reserve(num_to_evict);
+      for (size_t i = 0; i < num_to_evict; i++) {
+        victims.push_back(pop_oldest());
+      }
 
       // Then keep taking the oldest until the point total is under the low-water target -- not
       // merely under the cap, or the next insert re-triggers and eviction runs on nearly every
       // scan. Bounded by flat_voxels.size() - 1 so a small target cannot empty the map entirely.
       if (max_num_points_ > 0) {
         size_t remaining_points = total_points;
-        for (size_t i = 0; i < num_to_evict; i++) {
-          remaining_points -= frame::size(flat_voxels[order[i]]->second);
+        for (const size_t idx : victims) {
+          remaining_points -= frame::size(flat_voxels[idx]->second);
         }
-        while (remaining_points > target_num_points_ && num_to_evict + 1 < flat_voxels.size()) {
-          remaining_points -= frame::size(flat_voxels[order[num_to_evict]]->second);
-          num_to_evict++;
+        while (remaining_points > target_num_points_ && victims.size() + 1 < flat_voxels.size()) {
+          const size_t idx = pop_oldest();
+          remaining_points -= frame::size(flat_voxels[idx]->second);
+          victims.push_back(idx);
         }
       }
 
       // Evict the chosen victims via swap-remove, by their original flat_voxels index, walked
       // descending: each removal swaps in the current last element, which is only guaranteed not
       // to be one of the remaining not-yet-removed victims if the highest victim index goes first.
-      std::vector<size_t> victims(order.begin(), order.begin() + num_to_evict);
       std::sort(victims.begin(), victims.end(), [](size_t a, size_t b) { return a > b; });
       for (const size_t i : victims) {
         remove_at(i);
