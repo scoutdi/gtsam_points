@@ -7,6 +7,7 @@
 #include <gtsam_points/ann/knn_result.hpp>
 #include <gtsam_points/util/fast_floor.hpp>
 #include <gtsam_points/types/frame_traits.hpp>
+#include <numeric>
 #include <optional>
 
 namespace gtsam_points {
@@ -85,24 +86,47 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
   const bool too_many_empty = empty_voxel_count > flat_voxels.size() / 4;
   if (over_cap || too_many_empty) {
     const size_t before_eviction = flat_voxels.size();
+
+    // Swap the voxel at `i` with the last one and drop it, patching `voxels` for just the one
+    // entry that moved instead of rebuilding the whole hash map afterward -- the old code paid an
+    // O(map size) unordered_map rebuild on every eviction regardless of how many voxels it
+    // actually dropped. This means eviction no longer preserves voxel order in `flat_voxels`, but
+    // nothing relies on that: decay() only needs eventual round-robin coverage, knn_search()'s tie
+    // -breaking is about point order within a voxel, and the old tier-2 LRU sort already reordered
+    // everything on every run it triggered.
+    const auto remove_at = [&](size_t i) {
+      voxels.erase(flat_voxels[i]->first.coord);
+      const size_t last = flat_voxels.size() - 1;
+      if (i != last) {
+        flat_voxels[i] = std::move(flat_voxels[last]);
+        voxels[flat_voxels[i]->first.coord] = i;
+      }
+      flat_voxels.pop_back();
+    };
+
     // Tier 1: Remove empty voxels (those with no points left after pruning)
-    auto remove_it = std::remove_if(flat_voxels.begin(), flat_voxels.end(), [](const std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>& v) {
-      return frame::size(v->second) == 0;
-    });
-    flat_voxels.erase(remove_it, flat_voxels.end());
+    for (size_t i = 0; i < flat_voxels.size();) {
+      if (frame::size(flat_voxels[i]->second) == 0) {
+        remove_at(i);
+      } else {
+        ++i;
+      }
+    }
 
     // Tier 2: If still over either cap, evict oldest voxels by LRU age. Removing empty voxels in
     // tier 1 did not change the point total, so total_points is still valid here.
     const bool still_over_voxels = max_num_voxels_ > 0 && flat_voxels.size() > max_num_voxels_;
     const bool still_over_points = max_num_points_ > 0 && total_points > max_num_points_;
     if (still_over_voxels || still_over_points) {
-      // Sort by lru ascending (oldest first)
-      std::sort(
-        flat_voxels.begin(),
-        flat_voxels.end(),
-        [](const std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>& a, const std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>& b) {
-          return a->first.lru < b->first.lru;
-        });
+      // Rank voxel INDICES by lru ascending (oldest first) into a side array, instead of sorting
+      // flat_voxels itself: reordering flat_voxels directly would move survivors to new positions
+      // without updating `voxels`, which only gets patched for the entries remove_at() below
+      // actually touches.
+      std::vector<size_t> order(flat_voxels.size());
+      std::iota(order.begin(), order.end(), 0);
+      std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return flat_voxels[a]->first.lru < flat_voxels[b]->first.lru;
+      });
 
       size_t num_to_evict = still_over_voxels ? flat_voxels.size() - max_num_voxels_ : 0;
 
@@ -112,21 +136,22 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
       if (max_num_points_ > 0) {
         size_t remaining_points = total_points;
         for (size_t i = 0; i < num_to_evict; i++) {
-          remaining_points -= frame::size(flat_voxels[i]->second);
+          remaining_points -= frame::size(flat_voxels[order[i]]->second);
         }
         while (remaining_points > target_num_points_ && num_to_evict + 1 < flat_voxels.size()) {
-          remaining_points -= frame::size(flat_voxels[num_to_evict]->second);
+          remaining_points -= frame::size(flat_voxels[order[num_to_evict]]->second);
           num_to_evict++;
         }
       }
 
-      flat_voxels.erase(flat_voxels.begin(), flat_voxels.begin() + num_to_evict);
-    }
-
-    // Rebuild the hash map
-    voxels.clear();
-    for (size_t i = 0; i < flat_voxels.size(); i++) {
-      voxels[flat_voxels[i]->first.coord] = i;
+      // Evict the chosen victims via swap-remove, by their original flat_voxels index, walked
+      // descending: each removal swaps in the current last element, which is only guaranteed not
+      // to be one of the remaining not-yet-removed victims if the highest victim index goes first.
+      std::vector<size_t> victims(order.begin(), order.begin() + num_to_evict);
+      std::sort(victims.begin(), victims.end(), [](size_t a, size_t b) { return a > b; });
+      for (const size_t i : victims) {
+        remove_at(i);
+      }
     }
 
     last_evicted_voxels_ = before_eviction - flat_voxels.size();
