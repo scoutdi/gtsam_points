@@ -28,6 +28,8 @@ template <typename VoxelContents>
 void IncrementalVoxelMap<VoxelContents>::clear() {
   lru_counter = 0;
   flat_voxels.clear();
+  voxel_phases.clear();
+  next_voxel_phase = 0;
   voxels.clear();
 }
 
@@ -54,6 +56,7 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
 
       found = voxels.emplace_hint(found, coord, flat_voxels.size());
       flat_voxels.emplace_back(voxel);
+      voxel_phases.emplace_back(next_voxel_phase++);
     }
 
     auto& [info, voxel] = *flat_voxels[found->second];
@@ -104,9 +107,11 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
       const size_t last = flat_voxels.size() - 1;
       if (i != last) {
         flat_voxels[i] = std::move(flat_voxels[last]);
+        voxel_phases[i] = voxel_phases[last];  // the phase belongs to the voxel, not the slot
         voxels[flat_voxels[i]->first.coord] = i;
       }
       flat_voxels.pop_back();
+      voxel_phases.pop_back();
     };
 
     // Tier 1: Remove empty voxels (those with no points left after pruning)
@@ -178,7 +183,17 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
 
 template <typename VoxelContents>
 void IncrementalVoxelMap<VoxelContents>::decay(size_t step, size_t offset){
-  for (size_t i = offset; i < flat_voxels.size(); i+=step) {
+  if (step == 0) {
+    return;
+  }
+  // Select on the voxel's own phase rather than its index. Striding by index only yields the
+  // intended round-robin while flat_voxels keeps its order, and eviction's swap-remove reorders
+  // it -- which silently left some voxels decayed repeatedly and others not at all.
+  // voxel_phases is contiguous, so this scan costs far less than one deref per voxel.
+  for (size_t i = 0; i < flat_voxels.size(); i++) {
+    if (voxel_phases[i] % step != offset % step) {
+      continue;
+    }
     flat_voxels[i]->second.decay(voxel_setting, static_cast<uint32_t>(lru_counter));
     flat_voxels[i]->second.remove_dead_points();
   }

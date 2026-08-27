@@ -162,6 +162,19 @@ protected:
 
   typename VoxelContents::Setting voxel_setting;                                  ///< Voxel setting.
   std::vector<std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>> flat_voxels;  ///< Voxel contents.
+  /// Decay phase per voxel, parallel to flat_voxels and moved with it.
+  ///
+  /// decay(step, offset) used to select voxels by their position in flat_voxels. That is only a
+  /// round-robin sweep while the array keeps its order, and eviction's swap-remove does not:
+  /// after each eviction a different, effectively arbitrary 1-in-step subset was decayed, so some
+  /// voxels were decayed repeatedly and others never. Selecting on a phase the voxel carries with
+  /// it restores the intended "every voxel once per step calls" regardless of reordering.
+  ///
+  /// Kept in its own contiguous array rather than in VoxelInfo so decay() can scan it without
+  /// dereferencing one shared_ptr per voxel; that whole-map pointer chase is what made the old
+  /// initialize_iteration sweep expensive.
+  std::vector<uint32_t> voxel_phases;
+  uint32_t next_voxel_phase = 0;  ///< Phase handed to the next newly created voxel.
   std::unordered_map<Eigen::Vector3i, size_t, XORVector3iHash> voxels;            ///< Voxel index map.
 };
 
