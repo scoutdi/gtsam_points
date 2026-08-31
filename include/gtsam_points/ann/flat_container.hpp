@@ -79,8 +79,8 @@ public:
 
     this->points.emplace_back(points.points[i]);
     this->hit_counter.emplace_back(setting.initial_counter);
-    // 0 is never a live iteration, so a fresh point reads as "not yet adjusted this iteration",
-    // matching the old emplace_back(false).
+    // 0 is never a live iteration. A new point thus reads as "not yet adjusted this
+    // iteration". This is the behavior of the old emplace_back(false).
     this->hit_counter_adjusted_iteration.emplace_back(0);
     if (points.normals) {
       this->normals.emplace_back(points.normals[i]);
@@ -198,19 +198,23 @@ public:
   std::vector<Eigen::Matrix4d> covs;     ///< Covariances
   std::vector<double> intensities;       ///< Intensities
   std::vector<uint8_t> hit_counter;
-  /// Iteration in which each point's hit counter was last adjusted. Replaces a bool flag that
-  /// had to be cleared for every point in every voxel at the start of each insert() -- that
-  /// whole-map sweep measured 3.97 ms of insert()'s 12.87 ms on an Orin, almost all of it
-  /// chasing one shared_ptr per voxel through scattered heap. Comparing a stamp needs no reset,
-  /// so the sweep disappears entirely. 0 is never a live iteration.
-  /// (The stamp is 32-bit while the iteration counter is size_t: on wraparound, after ~4e9
-  /// scans, a point could be skipped for one iteration. That is >13 years at 10 Hz.)
+  /// The iteration in which the code last adjusted the hit counter of each point.
+  /// The value 0 is never a live iteration, so a new point reads as "not yet adjusted".
+  ///
+  /// This stamp replaces a bool flag. With the flag, insert() started with a reset pass over
+  /// every point in every voxel. On an Orin, that sweep of the whole map cost 3.97 ms of the
+  /// 12.87 ms of insert(). Almost all of the cost was one shared_ptr dereference per voxel in
+  /// scattered memory. A stamp needs no reset pass, because an old stamp is not equal to the
+  /// current iteration.
+  ///
+  /// The stamp is 32-bit, but the iteration counter is size_t. At wraparound, after about 4e9
+  /// scans, the code can skip one point for one iteration. At 10 Hz, that is more than 13 years.
   std::vector<uint32_t> hit_counter_adjusted_iteration;
 
 private:
   void increment_counter(const Setting& setting, size_t index, uint8_t max_counter, uint32_t iteration) {
     if(hit_counter_adjusted_iteration[index] == iteration)
-      return; // Already adjusted this iteration, skip to prevent multiple increments
+      return;  // Already adjusted this iteration. This prevents a second increment.
 
     if (hit_counter[index] + setting.hit_increment <= max_counter) {
       hit_counter[index] += setting.hit_increment;
@@ -222,7 +226,7 @@ private:
 
   void decrement_counter(const Setting& setting, size_t index, uint8_t decrement, uint32_t iteration) {
     if(hit_counter_adjusted_iteration[index] == iteration)
-      return; // Already adjusted this iteration, skip to prevent multiple decrements, or decrement of a poit that was seen this iteration.
+      return;  // Already adjusted this iteration. A point with a hit this iteration keeps its value.
 
     if (hit_counter[index] > decrement) {
       hit_counter[index] -= decrement;

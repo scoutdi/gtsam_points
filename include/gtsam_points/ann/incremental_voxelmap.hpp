@@ -49,13 +49,15 @@ public:
   /// @brief Maximum number of voxels. Eviction triggers when exceeded. 0 = disabled.
   void set_max_num_voxels(const size_t max_num_voxels) { this->max_num_voxels_ = max_num_voxels; }
 
-  /// @brief Set the point-count cap. Eviction fires on EITHER cap (voxels or points), whichever is
-  ///        exceeded first. 0 = off. The point cap bounds registration cost more directly than the
-  ///        voxel cap, since kNN cost scales with points-per-voxel rather than voxel count.
-  /// @param max_num_points  High-water mark: eviction triggers above this.
-  /// @param target_num_points  Low-water mark: evict down to this, not merely back to the cap, so
-  ///        the next insert does not immediately re-trigger. 0 means use max_num_points (no
-  ///        hysteresis), which makes eviction fire on nearly every scan once the cap is reached.
+  /// @brief Set the cap on the number of points. Eviction starts at the first cap that the map
+  ///        exceeds, points or voxels. 0 turns the point cap off. The point cap limits
+  ///        registration cost more directly than the voxel cap. kNN cost scales with points per
+  ///        voxel, and not with the voxel count.
+  /// @param max_num_points  High-water mark. Eviction starts above this number.
+  /// @param target_num_points  Low-water mark. Eviction removes voxels down to this number, and
+  ///        not only back to the cap. The next insert then does not start eviction again. The
+  ///        value 0 means max_num_points, that is, no hysteresis. At the cap, eviction then runs
+  ///        on nearly every scan.
   void set_max_num_points_in_map(const size_t max_num_points, const size_t target_num_points = 0) {
     this->max_num_points_ = max_num_points;
     this->target_num_points_ = (target_num_points > 0 && target_num_points <= max_num_points) ? target_num_points : max_num_points;
@@ -162,19 +164,19 @@ protected:
 
   typename VoxelContents::Setting voxel_setting;                                  ///< Voxel setting.
   std::vector<std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>> flat_voxels;  ///< Voxel contents.
-  /// Decay phase per voxel, parallel to flat_voxels and moved with it.
+  /// The decay phase of each voxel. This array is parallel to flat_voxels and moves with it.
   ///
-  /// decay(step, offset) used to select voxels by their position in flat_voxels. That is only a
-  /// round-robin sweep while the array keeps its order, and eviction's swap-remove does not:
-  /// after each eviction a different, effectively arbitrary 1-in-step subset was decayed, so some
-  /// voxels were decayed repeatedly and others never. Selecting on a phase the voxel carries with
-  /// it restores the intended "every voxel once per step calls" regardless of reordering.
+  /// decay(step, offset) selected voxels by their position in flat_voxels. That is a round-robin
+  /// sweep only while the array keeps its order, and the swap-remove in eviction breaks that
+  /// order. After each eviction the code decayed a different and arbitrary 1-in-step subset. Some
+  /// voxels got a decay many times, and others never. A phase that the voxel carries restores the
+  /// intended "every voxel once per step calls", whatever the order of the array.
   ///
-  /// Kept in its own contiguous array rather than in VoxelInfo so decay() can scan it without
-  /// dereferencing one shared_ptr per voxel; that whole-map pointer chase is what made the old
-  /// initialize_iteration sweep expensive.
+  /// The phases live in their own contiguous array, and not in VoxelInfo. decay() can then scan
+  /// them without one shared_ptr dereference per voxel. That pointer chase over the whole map
+  /// made the old initialize_iteration sweep expensive.
   std::vector<uint32_t> voxel_phases;
-  uint32_t next_voxel_phase = 0;  ///< Phase handed to the next newly created voxel.
+  uint32_t next_voxel_phase = 0;  ///< Phase for the next new voxel.
   std::unordered_map<Eigen::Vector3i, size_t, XORVector3iHash> voxels;            ///< Voxel index map.
 };
 

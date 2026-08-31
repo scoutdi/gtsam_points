@@ -35,16 +35,17 @@ void IncrementalVoxelMap<VoxelContents>::clear() {
 
 template <typename VoxelContents>
 void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool limit_hit_increment) {
-  // Bumped up front, not after the point loop, so it is stable for the whole scan: insert(),
-  // and then decay()/line_decay(), all share the per-iteration hit-counter bookkeeping and must
-  // agree on which iteration "this one" is. Only relative ordering matters for LRU eviction, so
-  // shifting every value by one is immaterial there.
+  // The counter increments here, before the point loop, and not after it. The value is then
+  // stable for the whole scan. insert(), decay() and line_decay() share the hit-counter
+  // bookkeeping, and all three must agree on the current iteration. LRU eviction uses only the
+  // relative order of the counter values. A shift of every value by one changes nothing there.
   lru_counter++;
   const uint32_t iteration = static_cast<uint32_t>(lru_counter);
 
-  // No per-iteration reset pass: points carry the iteration in which they were last adjusted,
-  // so a stale stamp simply compares unequal. Clearing a flag for every point in every voxel
-  // here used to cost 3.97 ms of this function's 12.87 ms on an Orin at 22k voxels.
+  // There is no reset pass per iteration. Each point holds the iteration of its last
+  // adjustment, and an old stamp is not equal to the current one. The old code cleared a flag
+  // for every point in every voxel here. On an Orin with 22k voxels, that cost 3.97 ms of the
+  // 12.87 ms of this function.
 
   // Insert points to the voxelmap
   for (size_t i = 0; i < points.size(); i++) {
@@ -68,11 +69,12 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
   for (auto& voxel : flat_voxels) {
     voxel->second.finalize();
   }
-  // Eviction: triggered either by exceeding the voxel cap, or by accumulating too many empty
-  // voxels (created when decay/line_decay drained all points from a voxel). Empty voxels are
-  // cheap individually but grow unboundedly with sporadic noise, so we sweep them when they
-  // exceed a fraction of the total. Tier-1 (empty removal) does the actual cleanup in both
-  // cases; tier-2 (LRU eviction) only runs if we're still over the cap afterwards.
+  // Two conditions start eviction: a map over one of the caps, or too many empty voxels.
+  // decay() and line_decay() make an empty voxel when they remove the last point from it. One
+  // empty voxel is cheap, but sporadic noise makes their number grow without a limit. The code
+  // thus removes them when they are more than a fraction of the total. Tier 1 removes the empty
+  // voxels in both cases. Tier 2 evicts by LRU age, and it runs only if the map is still over a
+  // cap.
   last_evicted_voxels_ = 0;
   size_t empty_voxel_count = 0;
   size_t total_points = 0;
@@ -83,25 +85,28 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
       ++empty_voxel_count;
     }
   }
-  // Two independent caps. The voxel cap bounds spatial extent and memory; the point cap bounds
-  // registration cost, which scales with points-per-voxel rather than with voxel count, so a map
-  // can be well under the voxel cap while still getting steadily more expensive to search.
+  // The map has two independent caps. The voxel cap limits spatial extent and memory. The point
+  // cap limits registration cost, because kNN cost scales with points per voxel and not with the
+  // voxel count. A map can stay well under the voxel cap and still get more expensive to search.
   const bool over_voxel_cap = max_num_voxels_ > 0 && flat_voxels.size() > max_num_voxels_;
   const bool over_point_cap = max_num_points_ > 0 && total_points > max_num_points_;
   const bool over_cap = over_voxel_cap || over_point_cap;
-  // Threshold of 1/4: bounds wasted empty-voxel memory to ~33% over the live set, while
-  // amortizing the rebuild cost (each rebuild reclaims at least 25% of the storage).
+  // Threshold of 1/4: this limits the wasted memory of empty voxels to about 33% over the live
+  // set. It also amortizes the rebuild cost, because each rebuild reclaims at least 25% of the
+  // storage.
   const bool too_many_empty = empty_voxel_count > flat_voxels.size() / 4;
   if (over_cap || too_many_empty) {
     const size_t before_eviction = flat_voxels.size();
 
-    // Swap the voxel at `i` with the last one and drop it, patching `voxels` for just the one
-    // entry that moved instead of rebuilding the whole hash map afterward -- the old code paid an
-    // O(map size) unordered_map rebuild on every eviction regardless of how many voxels it
-    // actually dropped. This means eviction no longer preserves voxel order in `flat_voxels`, but
-    // nothing relies on that: decay() only needs eventual round-robin coverage, knn_search()'s tie
-    // -breaking is about point order within a voxel, and the old tier-2 LRU sort already reordered
-    // everything on every run it triggered.
+    // remove_at() swaps the voxel at `i` with the last one and then removes it. It patches
+    // `voxels` for the one entry that moved. It does not rebuild the whole hash map. The old code
+    // paid an O(map size) rebuild of `voxels` on every eviction, whatever the number of removed
+    // voxels.
+    //
+    // Eviction thus does not keep the voxel order in `flat_voxels`. Nothing depends on that
+    // order. decay() needs only eventual round-robin coverage. The tie-break in knn_search()
+    // applies to the point order inside a voxel. The old tier-2 LRU sort also reordered
+    // everything on every run.
     const auto remove_at = [&](size_t i) {
       voxels.erase(flat_voxels[i]->first.coord);
       const size_t last = flat_voxels.size() - 1;
@@ -123,17 +128,16 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
       }
     }
 
-    // Tier 2: If still over either cap, evict oldest voxels by LRU age. Removing empty voxels in
-    // tier 1 did not change the point total, so total_points is still valid here.
+    // Tier 2: if the map is still over one of the caps, evict the oldest voxels by LRU age.
+    // Tier 1 removed only empty voxels, so total_points is still correct here.
     const bool still_over_voxels = max_num_voxels_ > 0 && flat_voxels.size() > max_num_voxels_;
     const bool still_over_points = max_num_points_ > 0 && total_points > max_num_points_;
     if (still_over_voxels || still_over_points) {
-      // Extract the oldest voxels one at a time from a min-heap over indices (ranked by lru),
-      // rather than fully sorting all of flat_voxels by lru: eviction is typically a small
-      // fraction of the map (e.g. steady-state operation right at the cap evicts just enough to
-      // make room for the next scan), so ranking the entire map to find the few oldest is wasted
-      // work. Heapify is still O(N), but each extraction is only O(log N), against O(N log N) to
-      // rank everything up front.
+      // A min-heap over the indices, ranked by lru, gives the oldest voxels one at a time. A
+      // full sort of flat_voxels by lru is not necessary. Eviction usually touches a small
+      // fraction of the map. At steady state, right at the cap, it evicts just enough voxels for
+      // the next scan. A rank of the whole map is thus wasted work. The heapify is still O(N),
+      // but each extraction is O(log N), against O(N log N) for a full sort.
       std::vector<size_t> heap(flat_voxels.size());
       std::iota(heap.begin(), heap.end(), 0);
       const auto older = [&](size_t a, size_t b) {
@@ -153,9 +157,10 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
         victims.push_back(pop_oldest());
       }
 
-      // Then keep taking the oldest until the point total is under the low-water target -- not
-      // merely under the cap, or the next insert re-triggers and eviction runs on nearly every
-      // scan. Bounded by flat_voxels.size() - 1 so a small target cannot empty the map entirely.
+      // The loop then takes more of the oldest voxels until the point total is under the
+      // low-water target. A stop at the cap is not enough. The next insert re-triggers eviction,
+      // and eviction then runs on nearly every scan. The bound of flat_voxels.size() - 1 keeps a
+      // small target from an empty map.
       if (max_num_points_ > 0) {
         size_t remaining_points = total_points;
         for (const size_t idx : victims) {
@@ -168,9 +173,9 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
         }
       }
 
-      // Evict the chosen victims via swap-remove, by their original flat_voxels index, walked
-      // descending: each removal swaps in the current last element, which is only guaranteed not
-      // to be one of the remaining not-yet-removed victims if the highest victim index goes first.
+      // Evict the victims with swap-remove, by their original index in flat_voxels, in
+      // descending order. Each removal swaps in the current last element. With the highest index
+      // first, that element is never one of the victims that remain.
       std::sort(victims.begin(), victims.end(), [](size_t a, size_t b) { return a > b; });
       for (const size_t i : victims) {
         remove_at(i);
@@ -186,10 +191,10 @@ void IncrementalVoxelMap<VoxelContents>::decay(size_t step, size_t offset){
   if (step == 0) {
     return;
   }
-  // Select on the voxel's own phase rather than its index. Striding by index only yields the
-  // intended round-robin while flat_voxels keeps its order, and eviction's swap-remove reorders
-  // it -- which silently left some voxels decayed repeatedly and others not at all.
-  // voxel_phases is contiguous, so this scan costs far less than one deref per voxel.
+  // The selection uses the phase of the voxel, and not its index. A stride over the index gives
+  // the intended round-robin only while flat_voxels keeps its order. The swap-remove in eviction
+  // breaks that order. The old code thus decayed some voxels many times and others never.
+  // voxel_phases is contiguous, so this scan costs much less than one dereference per voxel.
   for (size_t i = 0; i < flat_voxels.size(); i++) {
     if (voxel_phases[i] % step != offset % step) {
       continue;
