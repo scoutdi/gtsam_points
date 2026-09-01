@@ -150,23 +150,34 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
         return heap[--heap_end];
       };
 
-      size_t num_to_evict = still_over_voxels ? flat_voxels.size() - max_num_voxels_ : 0;
+      // The subtraction is safe only under still_over_voxels. Both values are size_t, so a
+      // subtraction below the cap wraps to a huge count instead of to zero.
+      const size_t num_over_voxel_cap = still_over_voxels ? flat_voxels.size() - max_num_voxels_ : 0;
       std::vector<size_t> victims;
-      victims.reserve(num_to_evict);
-      for (size_t i = 0; i < num_to_evict; i++) {
+      victims.reserve(num_over_voxel_cap);
+      for (size_t i = 0; i < num_over_voxel_cap; i++) {
         victims.push_back(pop_oldest());
       }
 
       // The loop then takes more of the oldest voxels until the point total is under the
       // low-water target. A stop at the cap is not enough. The next insert re-triggers eviction,
-      // and eviction then runs on nearly every scan. The bound of flat_voxels.size() - 1 keeps a
-      // small target from an empty map.
+      // and eviction then runs on nearly every scan.
       if (max_num_points_ > 0) {
         size_t remaining_points = total_points;
         for (const size_t idx : victims) {
           remaining_points -= frame::size(flat_voxels[idx]->second);
         }
-        while (remaining_points > target_num_points_ && victims.size() + 1 < flat_voxels.size()) {
+        while (true) {
+          const bool still_above_target = remaining_points > target_num_points_;
+          // Eviction always leaves one voxel behind. An empty map has no correspondences at all,
+          // so registration fails outright, and the next scan cannot recover the pose. One stale
+          // voxel is the cheaper failure. The consequence is that the point cap is a hard cap
+          // only above max_num_points_in_cell. Below that, the last voxel alone can hold more
+          // points than the cap. Callers must not set a cap that small.
+          const bool one_voxel_would_remain = victims.size() + 1 < flat_voxels.size();
+          if (!still_above_target || !one_voxel_would_remain) {
+            break;
+          }
           const size_t idx = pop_oldest();
           remaining_points -= frame::size(flat_voxels[idx]->second);
           victims.push_back(idx);

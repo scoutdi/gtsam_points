@@ -58,6 +58,9 @@ public:
   ///        not only back to the cap. The next insert then does not start eviction again. The
   ///        value 0 means max_num_points, that is, no hysteresis. At the cap, eviction then runs
   ///        on nearly every scan.
+  /// @note Eviction always keeps one voxel, because an empty map gives no correspondences at
+  ///       all. The cap is thus a hard cap only above the per-voxel point limit
+  ///       (Setting::max_num_points_in_cell). Do not set a smaller cap.
   void set_max_num_points_in_map(const size_t max_num_points, const size_t target_num_points = 0) {
     this->max_num_points_ = max_num_points;
     this->target_num_points_ = (target_num_points > 0 && target_num_points <= max_num_points) ? target_num_points : max_num_points;

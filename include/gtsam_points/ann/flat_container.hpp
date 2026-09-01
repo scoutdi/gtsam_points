@@ -12,6 +12,14 @@
 namespace gtsam_points {
 
 /// @brief Point container with a flat vector.
+///
+/// @note This fork extends the upstream VoxelContents contract. A custom container must provide
+///       decay(), line_decay(), remove_dead_points() and hit_counter(), and its add() must take
+///       the limit_hit_increment flag. IncrementalVoxelMap calls all of them. The contract is
+///       therefore already incompatible with an upstream container, and this file adds no
+///       overload for the older signature. An overload without the iteration argument cannot
+///       work: the iteration is the only thing that tells increment_counter() and
+///       decrement_counter() whether the current scan already touched a point.
 struct FlatContainer {
 public:
   /// @brief FlatContainer setting.
