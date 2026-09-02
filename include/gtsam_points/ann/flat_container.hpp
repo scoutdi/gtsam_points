@@ -58,14 +58,14 @@ public:
   size_t size() const { return points.size(); }
 
   /// @brief Add a point to the container.
-  void add(const Setting& setting, const PointCloud& points, size_t i, bool limit_hit_increment) {
+  void add(const Setting& setting, const PointCloud& points, size_t i, bool limit_hit_increment, uint32_t iteration) {
     bool found_duplicate = false;
 
     for(int j=0; j<this->points.size(); j++){
       auto distance_sq = (this->points[j] - points.points[i]).squaredNorm();
       if (distance_sq < setting.hit_radius_sq) {
         auto max_hit_counter = limit_hit_increment ? setting.limited_hit_counter_max : setting.max_counter;
-        increment_counter(setting, j, max_hit_counter);
+        increment_counter(setting, j, max_hit_counter, iteration);
       }
       if(distance_sq < setting.min_sq_dist_in_cell){
         found_duplicate = true;
@@ -79,7 +79,9 @@ public:
 
     this->points.emplace_back(points.points[i]);
     this->hit_counter.emplace_back(setting.initial_counter);
-    this->hit_counter_adjusted_this_iteration.emplace_back(false);
+    // 0 is never a live iteration. A new point thus reads as "not yet adjusted this
+    // iteration". This is the behavior of the old emplace_back(false).
+    this->hit_counter_adjusted_iteration.emplace_back(0);
     if (points.normals) {
       this->normals.emplace_back(points.normals[i]);
     }
@@ -91,13 +93,13 @@ public:
     }
   }
 
-  void decay(const Setting& setting) {
+  void decay(const Setting& setting, uint32_t iteration) {
     if(hit_counter.size() != points.size()){
       throw std::runtime_error("hit_counter size mismatch in FlatContainer::decay");
     }
     for(size_t i=0; i<hit_counter.size(); i++){
       if(hit_counter[i] < setting.decay_upper_limit){
-        decrement_counter(setting, i, setting.decay_decrement);
+        decrement_counter(setting, i, setting.decay_decrement, iteration);
       }
     }
   }
@@ -112,7 +114,7 @@ public:
       if (write != read) {
         points[write] = points[read];
         hit_counter[write] = hit_counter[read];
-        hit_counter_adjusted_this_iteration[write] = hit_counter_adjusted_this_iteration[read];
+        hit_counter_adjusted_iteration[write] = hit_counter_adjusted_iteration[read];
         if (!normals.empty()) normals[write] = normals[read];
         if (!covs.empty()) covs[write] = covs[read];
         if (!intensities.empty()) intensities[write] = intensities[read];
@@ -121,17 +123,12 @@ public:
     }
     points.resize(write);
     hit_counter.resize(write);
-    hit_counter_adjusted_this_iteration.resize(write);
+    hit_counter_adjusted_iteration.resize(write);
     if (!normals.empty()) normals.resize(write);
     if (!covs.empty()) covs.resize(write);
     if (!intensities.empty()) intensities.resize(write);
   }
 
-  void initialize_iteration(){
-    for(size_t i=0; i<hit_counter_adjusted_this_iteration.size(); i++){
-      hit_counter_adjusted_this_iteration[i] = false;
-    }
-  }
 
   /// @brief Finalize the container (Nothing to do for FlatContainer).
   void finalize() {}
@@ -160,7 +157,7 @@ public:
   /// @param dir          Direction of the line
   /// @param length       Length of the line
   /// @param radius_sq    Squared radius around line where points will be decayed
-  void line_decay(const Setting& setting, const Eigen::Vector4d& start, const Eigen::Vector4d& dir, const double start_length, const double length, const double radius_sq) {
+  void line_decay(const Setting& setting, const Eigen::Vector4d& start, const Eigen::Vector4d& dir, const double start_length, const double length, const double radius_sq, uint32_t iteration) {
     for (size_t i = 0; i < points.size(); i++) {
       Eigen::Vector4d pt_to_start = points[i] - start;
 
@@ -170,7 +167,7 @@ public:
       }
       double across_line_distance_sq = (pt_to_start - along_line_progress * dir).squaredNorm();
       if (across_line_distance_sq < radius_sq) {
-        decrement_counter(setting, i, setting.ray_trace_decrement);
+        decrement_counter(setting, i, setting.ray_trace_decrement, iteration);
       }
     }
   }
@@ -201,31 +198,42 @@ public:
   std::vector<Eigen::Matrix4d> covs;     ///< Covariances
   std::vector<double> intensities;       ///< Intensities
   std::vector<uint8_t> hit_counter;
-  std::vector<bool> hit_counter_adjusted_this_iteration;
+  /// The iteration in which the code last adjusted the hit counter of each point.
+  /// The value 0 is never a live iteration, so a new point reads as "not yet adjusted".
+  ///
+  /// This stamp replaces a bool flag. With the flag, insert() started with a reset pass over
+  /// every point in every voxel. On an Orin, that sweep of the whole map cost 3.97 ms of the
+  /// 12.87 ms of insert(). Almost all of the cost was one shared_ptr dereference per voxel in
+  /// scattered memory. A stamp needs no reset pass, because an old stamp is not equal to the
+  /// current iteration.
+  ///
+  /// The stamp is 32-bit, but the iteration counter is size_t. At wraparound, after about 4e9
+  /// scans, the code can skip one point for one iteration. At 10 Hz, that is more than 13 years.
+  std::vector<uint32_t> hit_counter_adjusted_iteration;
 
 private:
-  void increment_counter(const Setting& setting, size_t index, uint8_t max_counter) {
-    if(hit_counter_adjusted_this_iteration[index])
-      return; // Already adjusted this iteration, skip to prevent multiple increments
+  void increment_counter(const Setting& setting, size_t index, uint8_t max_counter, uint32_t iteration) {
+    if(hit_counter_adjusted_iteration[index] == iteration)
+      return;  // Already adjusted this iteration. This prevents a second increment.
 
     if (hit_counter[index] + setting.hit_increment <= max_counter) {
       hit_counter[index] += setting.hit_increment;
     } else {
       hit_counter[index] = max_counter;
     }
-    hit_counter_adjusted_this_iteration[index] = true;
+    hit_counter_adjusted_iteration[index] = iteration;
   }
 
-  void decrement_counter(const Setting& setting, size_t index, uint8_t decrement) {
-    if(hit_counter_adjusted_this_iteration[index])
-      return; // Already adjusted this iteration, skip to prevent multiple decrements, or decrement of a poit that was seen this iteration.
+  void decrement_counter(const Setting& setting, size_t index, uint8_t decrement, uint32_t iteration) {
+    if(hit_counter_adjusted_iteration[index] == iteration)
+      return;  // Already adjusted this iteration. A point with a hit this iteration keeps its value.
 
     if (hit_counter[index] > decrement) {
       hit_counter[index] -= decrement;
     } else {
       hit_counter[index] = 0;
     }
-    hit_counter_adjusted_this_iteration[index] = true;
+    hit_counter_adjusted_iteration[index] = iteration;
   }
 };
 

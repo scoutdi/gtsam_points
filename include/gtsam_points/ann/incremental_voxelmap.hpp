@@ -48,6 +48,15 @@ public:
   void set_lru_horizon(const int lru_horizon) { this->lru_horizon = lru_horizon; }
   /// @brief Maximum number of voxels. Eviction triggers when exceeded. 0 = disabled.
   void set_max_num_voxels(const size_t max_num_voxels) { this->max_num_voxels_ = max_num_voxels; }
+
+  /// @brief Set the cap on the number of points. Eviction starts at the first cap that the map
+  ///        exceeds, points or voxels. Eviction stops as soon as the map is back under the cap.
+  ///        0 turns the point cap off. The point cap limits registration cost more directly than
+  ///        the voxel cap. kNN cost scales with points per voxel, and not with the voxel count.
+  /// @note The cap must be 0, or at least the per-voxel point limit
+  ///       (Setting::max_num_points_in_cell). Eviction removes whole voxels, so a smaller cap
+  ///       drains the map to empty, and an empty map gives no correspondences at all.
+  void set_max_num_points_in_map(const size_t max_num_points) { this->max_num_points_ = max_num_points; }
   /// @brief Neighboring voxel search mode (1, 7, 19, or 27).
   void set_neighbor_voxel_mode(const int mode) { offsets = neighbor_offsets(mode); }
   /// @brief Voxel setting.
@@ -142,12 +151,26 @@ protected:
   size_t lru_horizon;       ///< LRU horizon size. Used as age threshold during cap-driven eviction.
   size_t lru_counter;       ///< LRU counter. Incremented every insert() call.
   size_t max_num_voxels_;   ///< Maximum number of voxels before eviction triggers. 0 = disabled.
+  size_t max_num_points_ = 0;  ///< Maximum total points before eviction triggers. 0 = disabled.
 
   size_t last_evicted_voxels_ = 0;              ///< Number of voxels evicted during the last insert() call.
 
 
   typename VoxelContents::Setting voxel_setting;                                  ///< Voxel setting.
   std::vector<std::shared_ptr<std::pair<VoxelInfo, VoxelContents>>> flat_voxels;  ///< Voxel contents.
+  /// The decay phase of each voxel. This array is parallel to flat_voxels and moves with it.
+  ///
+  /// decay(step, offset) selected voxels by their position in flat_voxels. That is a round-robin
+  /// sweep only while the array keeps its order, and the swap-remove in eviction breaks that
+  /// order. After each eviction the code decayed a different and arbitrary 1-in-step subset. Some
+  /// voxels got a decay many times, and others never. A phase that the voxel carries restores the
+  /// intended "every voxel once per step calls", whatever the order of the array.
+  ///
+  /// The phases live in their own contiguous array, and not in VoxelInfo. decay() can then scan
+  /// them without one shared_ptr dereference per voxel. That pointer chase over the whole map
+  /// made the old initialize_iteration sweep expensive.
+  std::vector<uint32_t> voxel_phases;
+  uint32_t next_voxel_phase = 0;  ///< Phase for the next new voxel.
   std::unordered_map<Eigen::Vector3i, size_t, XORVector3iHash> voxels;            ///< Voxel index map.
 };
 
