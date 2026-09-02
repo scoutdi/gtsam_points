@@ -150,10 +150,10 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
         return heap[--heap_end];
       };
 
-      size_t num_to_evict = still_over_voxels ? flat_voxels.size() - max_num_voxels_ : 0;
+      const size_t num_over_voxel_cap = still_over_voxels ? flat_voxels.size() - max_num_voxels_ : 0;
       std::vector<size_t> victims;
-      victims.reserve(num_to_evict);
-      for (size_t i = 0; i < num_to_evict; i++) {
+      victims.reserve(num_over_voxel_cap);
+      for (size_t i = 0; i < num_over_voxel_cap; i++) {
         victims.push_back(pop_oldest());
       }
 
