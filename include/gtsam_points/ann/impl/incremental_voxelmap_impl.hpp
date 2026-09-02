@@ -157,16 +157,14 @@ void IncrementalVoxelMap<VoxelContents>::insert(const PointCloud& points, bool l
         victims.push_back(pop_oldest());
       }
 
-      // The loop then takes more of the oldest voxels until the point total is under the
-      // low-water target. A stop at the cap is not enough. The next insert re-triggers eviction,
-      // and eviction then runs on nearly every scan. The bound of flat_voxels.size() - 1 keeps a
-      // small target from an empty map.
+      // The loop then takes more of the oldest voxels until the point total is back under the
+      // cap. The voxel-cap victims above do not always free enough points on their own.
       if (max_num_points_ > 0) {
         size_t remaining_points = total_points;
         for (const size_t idx : victims) {
           remaining_points -= frame::size(flat_voxels[idx]->second);
         }
-        while (remaining_points > target_num_points_ && victims.size() + 1 < flat_voxels.size()) {
+        while (remaining_points > max_num_points_) {
           const size_t idx = pop_oldest();
           remaining_points -= frame::size(flat_voxels[idx]->second);
           victims.push_back(idx);

@@ -50,18 +50,13 @@ public:
   void set_max_num_voxels(const size_t max_num_voxels) { this->max_num_voxels_ = max_num_voxels; }
 
   /// @brief Set the cap on the number of points. Eviction starts at the first cap that the map
-  ///        exceeds, points or voxels. 0 turns the point cap off. The point cap limits
-  ///        registration cost more directly than the voxel cap. kNN cost scales with points per
-  ///        voxel, and not with the voxel count.
-  /// @param max_num_points  High-water mark. Eviction starts above this number.
-  /// @param target_num_points  Low-water mark. Eviction removes voxels down to this number, and
-  ///        not only back to the cap. The next insert then does not start eviction again. The
-  ///        value 0 means max_num_points, that is, no hysteresis. At the cap, eviction then runs
-  ///        on nearly every scan.
-  void set_max_num_points_in_map(const size_t max_num_points, const size_t target_num_points = 0) {
-    this->max_num_points_ = max_num_points;
-    this->target_num_points_ = (target_num_points > 0 && target_num_points <= max_num_points) ? target_num_points : max_num_points;
-  }
+  ///        exceeds, points or voxels. Eviction stops as soon as the map is back under the cap.
+  ///        0 turns the point cap off. The point cap limits registration cost more directly than
+  ///        the voxel cap. kNN cost scales with points per voxel, and not with the voxel count.
+  /// @note The cap must be 0, or at least the per-voxel point limit
+  ///       (Setting::max_num_points_in_cell). Eviction removes whole voxels, so a smaller cap
+  ///       drains the map to empty, and an empty map gives no correspondences at all.
+  void set_max_num_points_in_map(const size_t max_num_points) { this->max_num_points_ = max_num_points; }
   /// @brief Neighboring voxel search mode (1, 7, 19, or 27).
   void set_neighbor_voxel_mode(const int mode) { offsets = neighbor_offsets(mode); }
   /// @brief Voxel setting.
@@ -157,7 +152,6 @@ protected:
   size_t lru_counter;       ///< LRU counter. Incremented every insert() call.
   size_t max_num_voxels_;   ///< Maximum number of voxels before eviction triggers. 0 = disabled.
   size_t max_num_points_ = 0;  ///< Maximum total points before eviction triggers. 0 = disabled.
-  size_t target_num_points_ = 0;  ///< Point count to evict down to once triggered (low-water mark).
 
   size_t last_evicted_voxels_ = 0;              ///< Number of voxels evicted during the last insert() call.
 
