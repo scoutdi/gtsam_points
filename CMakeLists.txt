@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 # First three digits are upstream gtsam_points version, last is our fork version
-set(SCOUT_CUSTOM_VERSION 1)
+set(SCOUT_CUSTOM_VERSION 2)
 project(gtsam_points VERSION 1.0.7.${SCOUT_CUSTOM_VERSION} LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -40,7 +40,7 @@ endif()
 
 find_package(Boost REQUIRED COMPONENTS filesystem)
 # First three digits are upstream gtsam version, last is our fork version
-set(GTSAM_REQUIRED_VERSION 4.3.0.1)
+set(GTSAM_REQUIRED_VERSION 4.3.0.2)
 find_package(GTSAM ${GTSAM_REQUIRED_VERSION} EXACT)
 if(NOT GTSAM_FOUND)
   message(
